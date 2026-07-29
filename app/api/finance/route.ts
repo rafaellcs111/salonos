@@ -5,9 +5,12 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const access = await getTenantAccess(url.searchParams.get("tenant"), "finance");
   if (!access) return Response.json({ error: "Acesso restrito a esta barbearia" }, { status: 403 });
+  if (access.plan === "starter") {
+    return Response.json({ error: "Financeiro disponÃ­vel nos planos Pro e Premium" }, { status: 403 });
+  }
   const period = url.searchParams.get("period") || new Date().toISOString().slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(period)) {
-    return Response.json({ error: "Período inválido" }, { status: 400 });
+    return Response.json({ error: "PerÃ­odo invÃ¡lido" }, { status: 400 });
   }
 
   const [summary, byBarber, transactions] = await Promise.all([
@@ -69,3 +72,4 @@ export async function GET(request: Request) {
     paymentProcessing: false,
   });
 }
+
