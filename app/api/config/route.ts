@@ -30,6 +30,9 @@ export async function GET(request: Request) {
   await ensureTables();
   const tenant = new URL(request.url).searchParams.get("tenant") || "chosen";
   const settingsAccess = await getTenantAccess(tenant, "settings");
+  if (!settingsAccess) {
+    return Response.json({ error: "Acesso restrito a este estabelecimento" }, { status: 403 });
+  }
   const [services, barbers, hours] = await Promise.all([
     env.DB.prepare("SELECT name, price, duration, active FROM services WHERE tenant_id = ? ORDER BY id").bind(tenant).all(),
     env.DB.prepare(`SELECT name, email, phone, role, commission, services, work_days AS workDays,
@@ -62,7 +65,7 @@ export async function GET(request: Request) {
       { name: "Thiago", email: "", phone: "", role: "Barbeiro", commission: 30, services: ["Corte"], workDays: ["2", "3", "4", "5", "6"], workStart: "10:00", workEnd: "20:00", breakStart: "12:00", breakEnd: "13:00", timeOff: [], permissions: { agenda: true, clients: true, finance: false, settings: false }, active: true },
       { name: "Dav", email: "", phone: "", role: "Barbeiro", commission: 30, services: ["Corte"], workDays: ["2", "3", "4", "5", "6"], workStart: "10:00", workEnd: "20:00", breakStart: "12:00", breakEnd: "13:00", timeOff: [], permissions: { agenda: true, clients: true, finance: false, settings: false }, active: true },
     ],
-    hours: hours.results.length ? hours.results.map((x) => ({ ...x, active: Boolean(x.active) })) : [{ label: "Terça a sexta", days: "2,3,4,5", open: "10:00", close: "20:00", active: true }, { label: "Sábado", days: "6", open: "09:00", close: "17:00", active: true }],
+    hours: hours.results.length ? hours.results.map((x) => ({ ...x, active: Boolean(x.active) })) : [{ label: "TerÃ§a a sexta", days: "2,3,4,5", open: "10:00", close: "20:00", active: true }, { label: "SÃ¡bado", days: "6", open: "09:00", close: "17:00", active: true }],
   });
 }
 
@@ -84,7 +87,14 @@ export async function POST(request: Request) {
     hours: { label: string; days: string; open: string; close: string; active: boolean }[];
   };
   if (!Array.isArray(data.services) || !Array.isArray(data.barbers) || !Array.isArray(data.hours)) {
-    return Response.json({ error: "Configuração inválida" }, { status: 400 });
+    return Response.json({ error: "ConfiguraÃ§Ã£o invÃ¡lida" }, { status: 400 });
+  }
+  const professionalLimit = access.plan === "starter" ? 3 : access.plan === "pro" ? 10 : Number.POSITIVE_INFINITY;
+  if (data.barbers.length > professionalLimit) {
+    return Response.json(
+      { error: `O plano ${access.plan === "starter" ? "Starter" : "Pro"} permite atÃ© ${professionalLimit} profissionais` },
+      { status: 403 },
+    );
   }
   const statements = [
     env.DB.prepare("DELETE FROM services WHERE tenant_id = ?").bind(access.tenantId),
@@ -162,3 +172,4 @@ function validTime(value: unknown, fallback: string) {
   const text = String(value || "");
   return /^\d{2}:\d{2}$/.test(text) ? text : fallback;
 }
+
