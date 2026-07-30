@@ -2,6 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
+      "source": "/",
+      "destination": "https://barberos-chosen.rafaelviamaquinas.chatgpt.site/"
+    },
+    {
       "source": "/:path*",
       "destination": "https://barberos-chosen.rafaelviamaquinas.chatgpt.site/:path*"
     }
