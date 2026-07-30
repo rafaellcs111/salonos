@@ -1,11 +1,21 @@
 import { getBarberOSOwner, getChatGPTUser } from "../../chatgpt-auth";
+import { isPrimaryPlatformOwner } from "../../platform-admins";
 import { getTenantAccess } from "../../tenant-access";
 
 export async function GET() {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "Não autenticado" }, { status: 401 });
-  if (await getBarberOSOwner()) {
-    return Response.json({ ...user, isOwner: true, tenantId: null, tenantName: null, tenantSlug: null });
+  const platformOwner = await getBarberOSOwner();
+  if (platformOwner) {
+    return Response.json({
+      ...platformOwner,
+      isOwner: true,
+      ownerRole: isPrimaryPlatformOwner(platformOwner.email) ? "Proprietário" : "Administrador geral",
+      role: "platform_owner",
+      tenantId: null,
+      tenantName: null,
+      tenantSlug: null,
+    });
   }
   const access = await getTenantAccess();
   if (!access) {
@@ -29,3 +39,4 @@ export async function GET() {
     permissions: access.permissions,
   });
 }
+
