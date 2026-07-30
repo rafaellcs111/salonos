@@ -145,12 +145,13 @@ export default function PublicBooking({ slug }: { slug: string }) {
 
   if (error && !store) return <main className="public-booking unavailable"><div><span className="chosen-mark">B</span><h1>Agenda indisponível</h1><p>{error}</p></div></main>;
   if (!store) return <main className="public-booking unavailable"><div><span className="chosen-mark">B</span><h1>Carregando agenda...</h1></div></main>;
+  const bookingTheme = store.tenant.businessType === "barbershop" ? "black" : store.tenant.theme;
   if (success) {
     const message = `Olá! Acabei de agendar ${service} com ${barber} para ${formatDate(date)}, às ${time}. Meu nome é o informado no agendamento.`;
-    return <main className={`public-booking theme-${store.tenant.theme}`}><section className="public-success"><span className="success-icon">✓</span><span className="section-kicker">AGENDAMENTO CONFIRMADO</span><h1>Nos vemos em breve!</h1><p>{service} com {barber}, dia {formatDate(date)} às {time}.</p><div><strong>{store.tenant.name}</strong><small>{store.tenant.city} · {store.tenant.phone}</small></div><a className="whatsapp-button full" href={whatsappUrl(store.tenant.phone, message)} target="_blank" rel="noreferrer"><MessageCircle aria-hidden="true" /> Confirmar pelo WhatsApp</a><button className="outline-button full" onClick={() => window.location.reload()}>Fazer outro agendamento</button></section></main>;
+    return <main className={`public-booking theme-${bookingTheme}`}><section className="public-success"><span className="success-icon">✓</span><span className="section-kicker">AGENDAMENTO CONFIRMADO</span><h1>Nos vemos em breve!</h1><p>{service} com {barber}, dia {formatDate(date)} às {time}.</p><div><strong>{store.tenant.name}</strong><small>{store.tenant.city} · {store.tenant.phone}</small></div><a className="whatsapp-button full" href={whatsappUrl(store.tenant.phone, message)} target="_blank" rel="noreferrer"><MessageCircle aria-hidden="true" /> Confirmar pelo WhatsApp</a><button className="outline-button full" onClick={() => window.location.reload()}>Fazer outro agendamento</button></section></main>;
   }
 
-  return <main className={`public-booking theme-${store.tenant.theme}`}><header><div className="public-brand">{store.tenant.logoUrl ? <img className="tenant-public-logo" src={store.tenant.logoUrl} alt={`Logo ${store.tenant.name}`} /> : <span className="chosen-mark">{store.tenant.name[0]}</span>}<span><strong>{store.tenant.name}</strong><small>{store.tenant.businessType === "salon" ? "Salão" : "Barbearia"} · {store.tenant.city}</small></span></div><span>Agendamento online por SalonOS</span></header>
+  return <main className={`public-booking theme-${bookingTheme}`}><header><div className="public-brand">{store.tenant.logoUrl ? <img className="tenant-public-logo" src={store.tenant.logoUrl} alt={`Logo ${store.tenant.name}`} /> : <span className="chosen-mark">{store.tenant.name[0]}</span>}<span><strong>{store.tenant.name}</strong><small>{store.tenant.businessType === "salon" ? "Salão" : "Barbearia"} · {store.tenant.city}</small></span></div><span>Agendamento online por SalonOS</span></header>
     <form className="public-booking-card" onSubmit={submit}>
       <div className="public-heading"><span className="section-kicker">AGENDE SEU HORÁRIO</span><h1>Escolha seu atendimento</h1><p>Confirmação imediata, sem pagamento online.</p></div>
       <fieldset><legend>1. Serviço</legend><div className="public-options">{store.services.map((item) => <button type="button" key={item.name} className={service === item.name ? "selected" : ""} onClick={() => setService(item.name)}><span><strong>{item.name}</strong><small>{item.duration} min</small></span><b>R$ {item.price}</b></button>)}</div></fieldset>
@@ -180,4 +181,5 @@ function whatsappUrl(phone: string, message: string) {
   if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
+
 
