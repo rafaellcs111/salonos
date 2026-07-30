@@ -1409,13 +1409,13 @@ function MasterContent({ section, onNavigate }: { section: string; onNavigate: (
         description: "Acompanhe solicitaÃ§Ãµes e organize o atendimento Ã s empresas.",
         cards: [["CHAMADOS ABERTOS", "0", "Nenhuma pendÃªncia"], ["EM ATENDIMENTO", "0", "Fila atual"], ["RESOLVIDOS", "0", "HistÃ³rico recente"]],
       },
-      ConfiguraÃ§Ãµes: {
+      "ConfiguraÃ§Ãµes": {
         title: "ConfiguraÃ§Ãµes do SalonOS",
         description: "PreferÃªncias gerais e seguranÃ§a do painel proprietÃ¡rio.",
         cards: [["ACESSO MASTER", "Protegido", "Conta proprietÃ¡ria verificada"], ["PAGAMENTOS", "Desativados", "Conforme configuraÃ§Ã£o atual"], ["EMPRESAS ATIVAS", String(activeCount), "Controle individual disponÃ­vel"]],
       },
     };
-    const content = sectionContent[section] || sectionContent.ConfiguraÃ§Ãµes;
+    const content = sectionContent[section] || sectionContent["ConfiguraÃ§Ãµes"];
     return <div className="owner-page master-section-page"><div className="settings-intro owner-intro"><div><span className="section-kicker">PAINEL MASTER</span><h2>{content.title}</h2><p>{content.description}</p></div></div><div className="owner-metrics">{content.cards.map(([label, value, detail]) => <article key={label}><small>{label}</small><strong>{value}</strong><span>{detail}</span></article>)}</div><section className="panel master-empty-state"><Store aria-hidden="true" /><h3>MÃ³dulo preparado</h3><p>Esta seÃ§Ã£o jÃ¡ estÃ¡ separada no painel e serÃ¡ aprofundada nas prÃ³ximas etapas do SalonOS.</p></section></div>;
   }
 
@@ -1612,4 +1612,5 @@ function InventoryContent({ tenantId }: { tenantId: string }) {
 function Footer() {
   return <footer><div className="shell"><Logo /><p>O sistema operacional do seu negÃ³cio.</p><span>Â© 2026 SalonOS</span></div></footer>;
 }
+
 
