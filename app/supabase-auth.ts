@@ -48,14 +48,14 @@ export async function getSalonOSSessionUser(): Promise<{ mode: "local" | "chatgp
 
 export async function loginWithPassword(email: string, password: string) {
   const { url, publishableKey } = config();
-  if (!url || !publishableKey) throw new Error("Autenticação ainda não configurada");
+  if (!url || !publishableKey) throw new Error("AutenticaÃ§Ã£o ainda nÃ£o configurada");
   const response = await fetch(`${url}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: publishableKey },
     body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
   });
   const data = await response.json() as { user?: { email?: string; user_metadata?: Record<string, unknown> }; error_description?: string; msg?: string };
-  if (!response.ok || !data.user?.email) throw new Error("E-mail ou senha inválidos");
+  if (!response.ok || !data.user?.email) throw new Error("E-mail ou senha invÃ¡lidos");
   const token = randomToken();
   const displayName = String(data.user.user_metadata?.display_name || data.user.user_metadata?.name || data.user.email);
   await ensureSessionTable();
@@ -79,7 +79,7 @@ export async function logoutLocalSession() {
 
 export async function upsertSupabaseUser(email: string, password: string, displayName: string) {
   const { url, secretKey } = config();
-  if (!url || !secretKey) throw new Error("Supabase não configurado");
+  if (!url || !secretKey) throw new Error("Supabase nÃ£o configurado");
   const normalizedEmail = email.trim().toLowerCase();
   const supabase = createClient(url, secretKey, {
     auth: {
@@ -92,7 +92,7 @@ export async function upsertSupabaseUser(email: string, password: string, displa
   let existingId: string | undefined;
   for (let page = 1; page <= 10 && !existingId; page += 1) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 100 });
-    if (error) throw new Error(`Não foi possível consultar a conta: ${error.message}`);
+    if (error) throw new Error(`NÃ£o foi possÃ­vel consultar a conta: ${error.message}`);
     existingId = data.users.find((user) => user.email?.toLowerCase() === normalizedEmail)?.id;
     if (data.users.length < 100) break;
   }
@@ -107,7 +107,27 @@ export async function upsertSupabaseUser(email: string, password: string, displa
     ? await supabase.auth.admin.updateUserById(existingId, attributes)
     : await supabase.auth.admin.createUser(attributes);
   if (result.error) {
-    throw new Error(`Não foi possível salvar a senha do gestor: ${result.error.message}`);
+    throw new Error(`NÃ£o foi possÃ­vel salvar a senha do gestor: ${result.error.message}`);
+  }
+}
+
+export async function deleteSupabaseUser(email: string) {
+  const { url, secretKey } = config();
+  if (!url || !secretKey) return;
+  const normalizedEmail = email.trim().toLowerCase();
+  const supabase = createClient(url, secretKey, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+  });
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 100 });
+    if (error) throw new Error(`NÃ£o foi possÃ­vel consultar a conta: ${error.message}`);
+    const existing = data.users.find((user) => user.email?.toLowerCase() === normalizedEmail);
+    if (existing) {
+      const result = await supabase.auth.admin.deleteUser(existing.id);
+      if (result.error) throw new Error(`NÃ£o foi possÃ­vel remover a credencial: ${result.error.message}`);
+      return;
+    }
+    if (data.users.length < 100) return;
   }
 }
 
@@ -139,3 +159,4 @@ async function digest(value: string) {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(bytes)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
+
