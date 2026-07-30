@@ -183,3 +183,48 @@ test("provisions staff access with a one-time temporary password", async () => {
   assert.match(page, /Senha provisória padrão: 12345678/);
 });
 
+test("keeps Rafael Doneda as the permanent owner and supports two additional master users", async () => {
+  const [page, platformAdmins, platformAdminApi, me, schema, migration] = await Promise.all([
+    source("app/page.tsx"),
+    source("app/platform-admins.ts"),
+    source("app/api/platform-admins/route.ts"),
+    source("app/api/me/route.ts"),
+    source("db/schema.ts"),
+    source("drizzle/0017_platform_admins.sql"),
+  ]);
+
+  assert.match(page, /Usuários Master/);
+  assert.match(page, /Rafael Doneda/);
+  assert.match(page, /Proprietário/);
+  assert.match(platformAdmins, /PRIMARY_PLATFORM_OWNER_NAME = "Rafael Doneda"/);
+  assert.match(platformAdmins, /ADDITIONAL_PLATFORM_ADMIN_LIMIT = 2/);
+  assert.match(platformAdminApi, /upsertSupabaseUser/);
+  assert.match(platformAdminApi, /A conta principal não pode ser removida/);
+  assert.match(me, /Administrador geral/);
+  assert.match(schema, /export const platformAdmins/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS `platform_admins`/);
+});
+
+test("forces the dark booking experience for barbershops", async () => {
+  const [booking, tenants] = await Promise.all([
+    source("app/agendar/[slug]/public-booking.tsx"),
+    source("app/api/tenants/route.ts"),
+  ]);
+
+  assert.match(booking, /businessType === "barbershop" \? "black" : store\.tenant\.theme/);
+  assert.match(tenants, /businessType === "barbershop" \? "black" : requestedTheme/);
+});
+
+test("refreshes operational data automatically and restores the authenticated workspace", async () => {
+  const page = await source("app/page.tsx");
+
+  assert.match(page, /LIVE_REFRESH_INTERVAL = 15_000/);
+  assert.match(page, /function useAutoRefresh/);
+  assert.match(page, /document\.addEventListener\("visibilitychange"/);
+  assert.match(page, /useAutoRefresh\(\(\) => \{\s*loadAgenda\(\);\s*loadDashboard\(\);/);
+  assert.match(page, /salonos:last-view/);
+  assert.match(page, /salonos:last-nav:/);
+  assert.match(page, /setView\(authenticatedView\)/);
+});
+
+
