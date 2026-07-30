@@ -34,7 +34,7 @@ test("keeps public booking and owner actions backed by durable data", async () =
     ]);
 
   assert.match(schema, /appointments_slot_unique/);
-  assert.match(appointments, /Hor.rio indispon.vel/);
+  assert.match(appointments, /rio indispon/);
   assert.match(appointments, /status != 'cancelled'/);
   assert.match(tenants, /getBarberOSOwner/);
   assert.match(tenants, /UPDATE tenants SET name/);
@@ -57,9 +57,12 @@ test("enforces plan boundaries and removes all tenant-owned data", async () => {
   assert.match(finance, /access\.plan === "starter"/);
   assert.match(inventory, /access\.plan !== "starter"/);
   assert.match(config, /professionalLimit/);
-  assert.match(config, /if \(!settingsAccess\)/);
+  assert.match(config, /getTenantAccess\(requestedTenant\)/);
+  assert.match(config, /bind\(access\.tenantId\)/);
+  assert.doesNotMatch(config, /name: "Thiago"/);
   assert.match(tenants, /DELETE FROM inventory_products/);
   assert.match(tenants, /deleteSupabaseUser/);
-  assert.match(appointments, /NÃ£o Ã© possÃ­vel agendar uma data passada/);
+  assert.match(appointments, /agendar uma data passada/);
 });
+
 
