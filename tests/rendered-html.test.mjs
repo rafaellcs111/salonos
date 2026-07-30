@@ -42,3 +42,24 @@ test("keeps public booking and owner actions backed by durable data", async () =
   assert.match(publicBooking, /api\/storefront/);
   assert.equal(JSON.parse(hosting).d1, "DB");
 });
+
+test("enforces plan boundaries and removes all tenant-owned data", async () => {
+  const [page, finance, inventory, config, tenants, appointments] = await Promise.all([
+    source("app/page.tsx"),
+    source("app/api/finance/route.ts"),
+    source("app/api/inventory/route.ts"),
+    source("app/api/config/route.ts"),
+    source("app/api/tenants/route.ts"),
+    source("app/api/appointments/route.ts"),
+  ]);
+
+  assert.match(page, /tenantPlan !== "starter"/);
+  assert.match(finance, /access\.plan === "starter"/);
+  assert.match(inventory, /access\.plan !== "starter"/);
+  assert.match(config, /professionalLimit/);
+  assert.match(config, /if \(!settingsAccess\)/);
+  assert.match(tenants, /DELETE FROM inventory_products/);
+  assert.match(tenants, /deleteSupabaseUser/);
+  assert.match(appointments, /NÃ£o Ã© possÃ­vel agendar uma data passada/);
+});
+
