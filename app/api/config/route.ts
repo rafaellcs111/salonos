@@ -28,22 +28,23 @@ async function ensureTables() {
 
 export async function GET(request: Request) {
   await ensureTables();
-  const tenant = new URL(request.url).searchParams.get("tenant") || "chosen";
-  const settingsAccess = await getTenantAccess(tenant, "settings");
-  if (!settingsAccess) {
+  const requestedTenant = new URL(request.url).searchParams.get("tenant") || "chosen";
+  const access = await getTenantAccess(requestedTenant);
+  if (!access) {
     return Response.json({ error: "Acesso restrito a este estabelecimento" }, { status: 403 });
   }
+  const canManageSettings = access.permissions.settings;
   const [services, barbers, hours] = await Promise.all([
-    env.DB.prepare("SELECT name, price, duration, active FROM services WHERE tenant_id = ? ORDER BY id").bind(tenant).all(),
+    env.DB.prepare("SELECT name, price, duration, active FROM services WHERE tenant_id = ? ORDER BY id").bind(access.tenantId).all(),
     env.DB.prepare(`SELECT name, email, phone, role, commission, services, work_days AS workDays,
       work_start AS workStart, work_end AS workEnd, break_start AS breakStart,
       break_end AS breakEnd, time_off AS timeOff, permissions, active
-      FROM barbers WHERE tenant_id = ? ORDER BY id`).bind(tenant).all(),
-    env.DB.prepare("SELECT label, days, open, close, active FROM business_hours WHERE tenant_id = ? ORDER BY id").bind(tenant).all(),
+      FROM barbers WHERE tenant_id = ? ORDER BY id`).bind(access.tenantId).all(),
+    env.DB.prepare("SELECT label, days, open, close, active FROM business_hours WHERE tenant_id = ? ORDER BY id").bind(access.tenantId).all(),
   ]);
   return Response.json({
-    services: services.results.length ? services.results.map((x) => ({ ...x, active: Boolean(x.active) })) : [{ name: "Corte", price: 50, duration: 50, active: true }],
-    barbers: barbers.results.length ? barbers.results.map((x) => settingsAccess ? ({
+    services: services.results.map((x) => ({ ...x, active: Boolean(x.active) })),
+    barbers: barbers.results.map((x) => canManageSettings ? ({
         ...x,
         services: safeJsonArray(x.services),
         workDays: safeJsonArray(x.workDays),
@@ -61,10 +62,7 @@ export async function GET(request: Request) {
         breakEnd: x.breakEnd,
         timeOff: safeTimeOff(x.timeOff),
         active: Boolean(x.active),
-      })) : [
-      { name: "Thiago", email: "", phone: "", role: "Barbeiro", commission: 30, services: ["Corte"], workDays: ["2", "3", "4", "5", "6"], workStart: "10:00", workEnd: "20:00", breakStart: "12:00", breakEnd: "13:00", timeOff: [], permissions: { agenda: true, clients: true, finance: false, settings: false }, active: true },
-      { name: "Dav", email: "", phone: "", role: "Barbeiro", commission: 30, services: ["Corte"], workDays: ["2", "3", "4", "5", "6"], workStart: "10:00", workEnd: "20:00", breakStart: "12:00", breakEnd: "13:00", timeOff: [], permissions: { agenda: true, clients: true, finance: false, settings: false }, active: true },
-    ],
+      })),
     hours: hours.results.length ? hours.results.map((x) => ({ ...x, active: Boolean(x.active) })) : [{ label: "TerÃ§a a sexta", days: "2,3,4,5", open: "10:00", close: "20:00", active: true }, { label: "SÃ¡bado", days: "6", open: "09:00", close: "17:00", active: true }],
   });
 }
@@ -172,4 +170,5 @@ function validTime(value: unknown, fallback: string) {
   const text = String(value || "");
   return /^\d{2}:\d{2}$/.test(text) ? text : fallback;
 }
+
 
