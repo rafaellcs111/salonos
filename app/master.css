@@ -175,6 +175,26 @@
   height: 46px;
 }
 
+.public-barber-photo {
+  overflow: hidden;
+}
+
+.public-barber-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dashboard-barber-photo {
+  overflow: hidden;
+}
+
+.dashboard-barber-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .brand-panel {
   display: grid;
   grid-template-columns: 78px 1fr minmax(280px, .9fr);
@@ -587,7 +607,7 @@
 
 .professional-card > header {
   display: grid;
-  grid-template-columns: 42px 1fr auto;
+  grid-template-columns: 42px 1fr auto auto;
   align-items: center;
   gap: 12px;
   padding: 16px 18px;
@@ -614,6 +634,124 @@
   background: #d4ad3512;
   color: #d4ad35;
   font-weight: 800;
+  overflow: hidden;
+}
+
+.professional-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.professional-photo-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.professional-photo-actions label,
+.professional-photo-actions button {
+  padding: 7px 9px;
+  border: 1px solid #373224;
+  border-radius: 6px;
+  background: #1b1a15;
+  color: #c9aa50;
+  font-size: 7px;
+  cursor: pointer;
+}
+
+.professional-photo-actions input {
+  display: none;
+}
+
+.professional-photo-actions button {
+  border-color: #3b2929;
+  color: #b67878;
+}
+
+.staff-access-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 13px;
+  padding: 12px;
+  border: 1px solid #2c302c;
+  border-radius: 8px;
+  background: #171a17;
+}
+
+.staff-access-control > span {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.staff-access-control strong {
+  color: #d9ddd7;
+  font-size: 9px;
+}
+
+.staff-access-control small {
+  color: #777e77;
+  font-size: 8px;
+}
+
+.staff-access-control button {
+  font-size: 8px;
+}
+
+.danger-button {
+  padding: 9px 11px;
+  border: 1px solid #613535;
+  border-radius: 7px;
+  background: #381c1c;
+  color: #e89a9a;
+}
+
+.password-change-overlay {
+  z-index: 100;
+  background: #080a08f2;
+}
+
+.password-change-card {
+  width: min(430px, calc(100% - 28px));
+}
+
+.password-change-card > svg {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 15px;
+  color: #d4ad35;
+}
+
+.password-change-card h2 {
+  margin: 7px 0;
+  font-size: 25px;
+}
+
+.password-change-card > p {
+  margin: 0 0 20px;
+  color: #858b84;
+  font-size: 10px;
+}
+
+.password-change-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 12px;
+  color: #858b84;
+  font-size: 8px;
+}
+
+.password-change-card input {
+  padding: 12px;
+  border: 1px solid #30342f;
+  border-radius: 7px;
+  background: #121512;
+  color: #fff;
 }
 
 .professional-fields {
@@ -844,7 +982,241 @@
   margin: 2px 0 0;
 }
 
+.onboarding-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(230px, .7fr);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.onboarding-main {
+  padding: 22px;
+}
+
+.onboarding-main > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 16px;
+  border: 0;
+}
+
+.onboarding-main > header h2 {
+  margin: 5px 0;
+  font-size: 20px;
+}
+
+.onboarding-main > header p,
+.onboarding-main > header > strong {
+  color: #858b83;
+  font-size: 9px;
+}
+
+.onboarding-main > header > strong {
+  color: #d4ad35;
+  font-family: Georgia, serif;
+  font-size: 22px;
+}
+
+.onboarding-progress {
+  height: 4px;
+  margin-bottom: 15px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #262a25;
+}
+
+.onboarding-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #a9872c, #e0bc4e);
+  transition: width .25s ease;
+}
+
+.onboarding-steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.onboarding-steps button {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid #292d28;
+  border-radius: 8px;
+  background: #171a17;
+  color: #c7cbc5;
+  text-align: left;
+}
+
+.onboarding-steps button > i {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border-radius: 50%;
+  background: #302a19;
+  color: #d4ad35;
+  font-size: 9px;
+  font-style: normal;
+}
+
+.onboarding-steps button > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.onboarding-steps button strong {
+  font-size: 9px;
+}
+
+.onboarding-steps button small {
+  color: #747a73;
+  font-size: 7px;
+}
+
+.onboarding-steps button > b {
+  color: #777d76;
+  font-size: 10px;
+}
+
+.onboarding-steps button.done > i {
+  background: #173722;
+  color: #63c781;
+}
+
+.onboarding-share {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 20px;
+  border-left: 1px solid #292d28;
+  background: linear-gradient(145deg, #181a17, #101210);
+  text-align: center;
+}
+
+.qr-frame {
+  display: grid;
+  width: 126px;
+  height: 126px;
+  margin: 12px 0;
+  padding: 7px;
+  place-items: center;
+  border-radius: 10px;
+  background: #fff;
+  color: #555;
+  font-size: 7px;
+}
+
+.qr-frame img {
+  width: 100%;
+  height: 100%;
+}
+
+.onboarding-share > strong {
+  font-size: 9px;
+}
+
+.onboarding-share > small {
+  width: 100%;
+  margin: 6px 0 12px;
+  overflow: hidden;
+  color: #737973;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-share > div:last-child {
+  display: flex;
+  gap: 7px;
+}
+
+.onboarding-share svg {
+  width: 13px;
+}
+
+.onboarding-panel.complete {
+  border-color: #34523d;
+}
+
+.clients-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.quick-client-form {
+  width: min(560px, calc(100% - 28px));
+}
+
+.quick-checkin {
+  width: min(620px, calc(100% - 28px));
+}
+
+.quick-checkin-list {
+  display: grid;
+  gap: 8px;
+  max-height: 390px;
+  padding: 18px;
+  overflow-y: auto;
+}
+
+.quick-checkin-list > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px;
+  border: 1px solid #2a2e29;
+  border-radius: 8px;
+  background: #171a17;
+  color: #d7dad5;
+  text-align: left;
+}
+
+.quick-checkin-list > button span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.quick-checkin-list > button strong {
+  font-size: 10px;
+}
+
+.quick-checkin-list > button small {
+  color: #777e77;
+  font-size: 8px;
+}
+
+.quick-checkin-list > button b {
+  color: #d4ad35;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.quick-checkin > .agenda-page-notice {
+  margin: 0 18px 18px;
+}
+
 @media (max-width: 900px) {
+  .onboarding-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-share {
+    border-top: 1px solid #292d28;
+    border-left: 0;
+  }
+
   .professional-fields {
     grid-template-columns: 1fr 1fr;
   }
@@ -855,6 +1227,32 @@
 }
 
 @media (max-width: 650px) {
+  .professional-card > header {
+    grid-template-columns: 42px 1fr auto;
+  }
+
+  .professional-photo-actions {
+    grid-column: 1 / -1;
+  }
+
+  .staff-access-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .clients-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .onboarding-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-main {
+    padding: 17px;
+  }
+
   .team-summary,
   .professional-fields {
     grid-template-columns: 1fr;

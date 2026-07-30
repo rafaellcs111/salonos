@@ -29,12 +29,12 @@ export async function GET(request: Request) {
 
   if (url.searchParams.get("availability") === "1") {
     if (!date || !barber) {
-      return Response.json({ error: "Data e profissional sÃ£o obrigatÃ³rios" }, { status: 400 });
+      return Response.json({ error: "Data e profissional são obrigatórios" }, { status: 400 });
     }
     const activeTenant = await env.DB.prepare("SELECT id FROM tenants WHERE id = ? AND active = 1 LIMIT 1")
       .bind(requestedTenant).all();
     if (!activeTenant.results.length) {
-      return Response.json({ error: "Barbearia indisponÃ­vel" }, { status: 404 });
+      return Response.json({ error: "Barbearia indisponível" }, { status: 404 });
     }
     const booked = await env.DB.prepare(
       `SELECT a.time,
@@ -71,17 +71,17 @@ export async function POST(request: Request) {
     return Response.json({ error: "Dados incompletos" }, { status: 400 });
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(body.date) || !/^\d{2}:\d{2}$/.test(body.time)) {
-    return Response.json({ error: "Data ou horÃ¡rio invÃ¡lido" }, { status: 400 });
+    return Response.json({ error: "Data ou horário inválido" }, { status: 400 });
   }
   if (!body.customerName.trim() || body.phone.replace(/\D/g, "").length < 8) {
-    return Response.json({ error: "Informe um nome e WhatsApp vÃ¡lidos" }, { status: 400 });
+    return Response.json({ error: "Informe um nome e WhatsApp válidos" }, { status: 400 });
   }
   const { date: today, minutes: currentMinutes } = getCurrentSaoPauloTime();
   if (body.date < today) {
-    return Response.json({ error: "NÃ£o Ã© possÃ­vel agendar uma data passada" }, { status: 400 });
+    return Response.json({ error: "Não é possível agendar uma data passada" }, { status: 400 });
   }
   if (body.date === today && toMinutes(body.time) <= currentMinutes) {
-    return Response.json({ error: "Este horÃ¡rio jÃ¡ passou" }, { status: 400 });
+    return Response.json({ error: "Este horário já passou" }, { status: 400 });
   }
   await ensureAppointmentsTable();
   const requestedTenant = body.tenant || TENANT;
@@ -89,13 +89,13 @@ export async function POST(request: Request) {
   if (requestedStatus !== "confirmed") {
     const access = await getTenantAccess(requestedTenant, "agenda");
     if (!access || !ALLOWED_STATUSES.has(requestedStatus)) {
-      return Response.json({ error: "Status nÃ£o autorizado" }, { status: 403 });
+      return Response.json({ error: "Status não autorizado" }, { status: 403 });
     }
   }
   const activeTenant = await env.DB.prepare("SELECT id FROM tenants WHERE id = ? AND active = 1 LIMIT 1")
     .bind(requestedTenant).all();
   if (!activeTenant.results.length) {
-    return Response.json({ error: "Barbearia indisponÃ­vel" }, { status: 404 });
+    return Response.json({ error: "Barbearia indisponível" }, { status: 404 });
   }
   if (requestedStatus === "confirmed") {
     const availabilityError = await validateProfessionalSlot(requestedTenant, body);
@@ -127,7 +127,7 @@ export async function POST(request: Request) {
     ).bind(requestedTenant, body.barber, body.date, body.time).all();
     const cancelledId = cancelled.results[0]?.id;
     if (!cancelledId) {
-      return Response.json({ error: "HorÃ¡rio indisponÃ­vel" }, { status: 409 });
+      return Response.json({ error: "Horário indisponível" }, { status: 409 });
     }
     await env.DB.batch([
       env.DB.prepare("DELETE FROM appointments WHERE id = ? AND tenant_id = ?").bind(cancelledId, requestedTenant),
@@ -171,34 +171,34 @@ async function validateProfessionalSlot(
         AND a.status != 'cancelled' AND a.id != ?`)
       .bind(tenantId, body.barber, body.date, excludeAppointmentId).all(),
   ]);
-  if (!professional || !service) return "Profissional ou serviÃ§o indisponÃ­vel";
+  if (!professional || !service) return "Profissional ou serviço indisponível";
 
   const services = parseJsonArray(professional.services);
-  if (services.length && !services.includes(body.service)) return "Este profissional nÃ£o atende o serviÃ§o escolhido";
+  if (services.length && !services.includes(body.service)) return "Este profissional não atende o serviço escolhido";
   const date = new Date(`${body.date}T12:00:00`);
   const weekday = String(date.getDay());
-  if (!parseJsonArray(professional.workDays).includes(weekday)) return "O profissional nÃ£o trabalha nesta data";
+  if (!parseJsonArray(professional.workDays).includes(weekday)) return "O profissional não trabalha nesta data";
   const away = parseTimeOff(professional.timeOff).some((period) => period.start <= body.date && period.end >= body.date);
-  if (away) return "O profissional estÃ¡ de folga ou fÃ©rias nesta data";
+  if (away) return "O profissional está de folga ou férias nesta data";
 
   const business = businessHours.results.find((item) => String(item.days).split(",").includes(weekday));
-  if (!business) return "A barbearia nÃ£o abre nesta data";
+  if (!business) return "A barbearia não abre nesta data";
   const start = toMinutes(body.time);
   const end = start + Number(service.duration || 30);
   const workStart = Math.max(toMinutes(String(business.open)), toMinutes(professional.workStart || String(business.open)));
   const workEnd = Math.min(toMinutes(String(business.close)), toMinutes(professional.workEnd || String(business.close)));
-  if (start < workStart || end > workEnd) return "HorÃ¡rio fora do expediente do profissional";
+  if (start < workStart || end > workEnd) return "Horário fora do expediente do profissional";
   if (professional.breakStart && professional.breakEnd) {
     const breakStart = toMinutes(professional.breakStart);
     const breakEnd = toMinutes(professional.breakEnd);
-    if (start < breakEnd && end > breakStart) return "HorÃ¡rio dentro da pausa do profissional";
+    if (start < breakEnd && end > breakStart) return "Horário dentro da pausa do profissional";
   }
   const conflict = occupied.results.some((item) => {
     const occupiedStart = toMinutes(String(item.time));
     const occupiedEnd = occupiedStart + Number(item.duration || 30);
     return start < occupiedEnd && end > occupiedStart;
   });
-  return conflict ? "Este horÃ¡rio conflita com outro agendamento" : null;
+  return conflict ? "Este horário conflita com outro agendamento" : null;
 }
 
 function parseJsonArray(value: unknown): string[] {
@@ -253,13 +253,13 @@ export async function PATCH(request: Request) {
   const access = await getTenantAccess(body.tenant, "agenda");
   if (!access) return Response.json({ error: "Acesso restrito a esta barbearia" }, { status: 403 });
   if (!body.id || (body.status && !ALLOWED_STATUSES.has(body.status))) {
-    return Response.json({ error: "AtualizaÃ§Ã£o invÃ¡lida" }, { status: 400 });
+    return Response.json({ error: "Atualização inválida" }, { status: 400 });
   }
   if (body.date && !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
-    return Response.json({ error: "Data invÃ¡lida" }, { status: 400 });
+    return Response.json({ error: "Data inválida" }, { status: 400 });
   }
   if (body.time && !/^\d{2}:\d{2}$/.test(body.time)) {
-    return Response.json({ error: "HorÃ¡rio invÃ¡lido" }, { status: 400 });
+    return Response.json({ error: "Horário inválido" }, { status: 400 });
   }
   await ensureAppointmentsTable();
   const currentResult = await env.DB.prepare(
@@ -267,20 +267,21 @@ export async function PATCH(request: Request) {
      WHERE id = ? AND tenant_id = ? LIMIT 1`,
   ).bind(body.id, access.tenantId).all();
   const current = currentResult.results[0] as Record<string, string | number> | undefined;
-  if (!current) return Response.json({ error: "Agendamento nÃ£o encontrado" }, { status: 404 });
+  if (!current) return Response.json({ error: "Agendamento não encontrado" }, { status: 404 });
 
   const nextBarber = (body.barber || String(current.barber)).trim().slice(0, 100);
   const nextDate = body.date || String(current.date);
   const nextTime = body.time || String(current.time);
   const nextStatus = body.status || String(current.status);
+  const scheduleChanged = Boolean(body.date || body.time || body.barber);
 
-  if (nextStatus !== "cancelled") {
+  if (nextStatus !== "cancelled" && scheduleChanged) {
     const { date: today, minutes: currentMinutes } = getCurrentSaoPauloTime();
     if (nextDate < today) {
-      return Response.json({ error: "NÃ£o Ã© possÃ­vel reagendar para uma data passada" }, { status: 400 });
+      return Response.json({ error: "Não é possível reagendar para uma data passada" }, { status: 400 });
     }
     if (nextDate === today && toMinutes(nextTime) <= currentMinutes) {
-      return Response.json({ error: "Este horÃ¡rio jÃ¡ passou" }, { status: 400 });
+      return Response.json({ error: "Este horário já passou" }, { status: 400 });
     }
     const availabilityError = await validateProfessionalSlot(
       access.tenantId,
@@ -302,7 +303,7 @@ export async function PATCH(request: Request) {
     ).bind(access.tenantId, nextBarber, nextDate, nextTime, body.id).all();
     const occupied = conflict.results[0] as Record<string, string | number> | undefined;
     if (occupied && occupied.status !== "cancelled") {
-      return Response.json({ error: "Este horÃ¡rio jÃ¡ estÃ¡ ocupado" }, { status: 409 });
+      return Response.json({ error: "Este horário já está ocupado" }, { status: 409 });
     }
     if (occupied?.status === "cancelled") {
       await env.DB.prepare("DELETE FROM appointments WHERE id = ? AND tenant_id = ?")
@@ -317,7 +318,7 @@ export async function PATCH(request: Request) {
     ).bind(nextBarber, nextDate, nextTime, nextStatus, body.id, access.tenantId).run();
     return Response.json({ ok: true });
   } catch {
-    return Response.json({ error: "Este horÃ¡rio jÃ¡ estÃ¡ ocupado" }, { status: 409 });
+    return Response.json({ error: "Este horário já está ocupado" }, { status: 409 });
   }
 }
 

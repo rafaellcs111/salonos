@@ -25,6 +25,7 @@ export async function GET() {
     plan: access.plan,
     role: access.role,
     staffName: access.staffName,
+    mustChangePassword: access.mustChangePassword,
     permissions: access.permissions,
   });
 }

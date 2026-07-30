@@ -39,12 +39,25 @@ export const services = sqliteTable("services", {
   active: integer("active", { mode: "boolean" }).notNull().default(true),
 });
 
+export const clients = sqliteTable("clients", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tenantId: text("tenant_id").notNull(),
+  name: text("name").notNull(),
+  phone: text("phone").notNull(),
+  createdAt: integer("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("clients_tenant_phone_unique").on(table.tenantId, table.phone),
+]);
+
 export const barbers = sqliteTable("barbers", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   tenantId: text("tenant_id").notNull(),
   name: text("name").notNull(),
   email: text("email").notNull().default(""),
   phone: text("phone").notNull().default(""),
+  photoKey: text("photo_key"),
+  accessEnabled: integer("access_enabled", { mode: "boolean" }).notNull().default(false),
+  accessMustChange: integer("access_must_change", { mode: "boolean" }).notNull().default(false),
   role: text("role").notNull().default("Barbeiro"),
   commission: integer("commission").notNull().default(30),
   services: text("services").notNull().default("[]"),

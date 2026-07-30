@@ -10,7 +10,9 @@ async function ensureTables() {
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS barbers (
       id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
-      email TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'Barbeiro',
+      email TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', photo_key TEXT,
+      access_enabled INTEGER NOT NULL DEFAULT 0, access_must_change INTEGER NOT NULL DEFAULT 0,
+      role TEXT NOT NULL DEFAULT 'Barbeiro',
       commission REAL NOT NULL DEFAULT 30, services TEXT NOT NULL DEFAULT '[]',
       work_days TEXT NOT NULL DEFAULT '["2","3","4","5","6"]',
       work_start TEXT NOT NULL DEFAULT '09:00', work_end TEXT NOT NULL DEFAULT '18:00',
@@ -36,7 +38,9 @@ export async function GET(request: Request) {
   const canManageSettings = access.permissions.settings;
   const [services, barbers, hours] = await Promise.all([
     env.DB.prepare("SELECT name, price, duration, active FROM services WHERE tenant_id = ? ORDER BY id").bind(access.tenantId).all(),
-    env.DB.prepare(`SELECT name, email, phone, role, commission, services, work_days AS workDays,
+    env.DB.prepare(`SELECT name, email, phone, photo_key AS photoKey, access_enabled AS accessEnabled,
+      access_must_change AS accessMustChange,
+      role, commission, services, work_days AS workDays,
       work_start AS workStart, work_end AS workEnd, break_start AS breakStart,
       break_end AS breakEnd, time_off AS timeOff, permissions, active
       FROM barbers WHERE tenant_id = ? ORDER BY id`).bind(access.tenantId).all(),
@@ -50,6 +54,8 @@ export async function GET(request: Request) {
         workDays: safeJsonArray(x.workDays),
         timeOff: safeTimeOff(x.timeOff),
         permissions: safePermissions(x.permissions),
+        accessEnabled: Boolean(x.accessEnabled),
+        accessMustChange: Boolean(x.accessMustChange),
         active: Boolean(x.active),
       }) : ({
         name: x.name,
@@ -63,7 +69,7 @@ export async function GET(request: Request) {
         timeOff: safeTimeOff(x.timeOff),
         active: Boolean(x.active),
       })),
-    hours: hours.results.length ? hours.results.map((x) => ({ ...x, active: Boolean(x.active) })) : [{ label: "TerÃ§a a sexta", days: "2,3,4,5", open: "10:00", close: "20:00", active: true }, { label: "SÃ¡bado", days: "6", open: "09:00", close: "17:00", active: true }],
+    hours: hours.results.length ? hours.results.map((x) => ({ ...x, active: Boolean(x.active) })) : [{ label: "Terça a sexta", days: "2,3,4,5", open: "10:00", close: "20:00", active: true }, { label: "Sábado", days: "6", open: "09:00", close: "17:00", active: true }],
   });
 }
 
@@ -75,7 +81,7 @@ export async function POST(request: Request) {
   const data = await request.json() as {
     services: { name: string; price: number; duration: number; active: boolean }[];
     barbers: {
-      name: string; email?: string; phone?: string; role?: string; commission: number;
+      name: string; email?: string; phone?: string; photoKey?: string | null; accessEnabled?: boolean; accessMustChange?: boolean; role?: string; commission: number;
       services?: string[]; workDays?: string[];
       workStart?: string; workEnd?: string; breakStart?: string; breakEnd?: string;
       timeOff?: { start?: string; end?: string; label?: string }[];
@@ -85,28 +91,44 @@ export async function POST(request: Request) {
     hours: { label: string; days: string; open: string; close: string; active: boolean }[];
   };
   if (!Array.isArray(data.services) || !Array.isArray(data.barbers) || !Array.isArray(data.hours)) {
-    return Response.json({ error: "ConfiguraÃ§Ã£o invÃ¡lida" }, { status: 400 });
+    return Response.json({ error: "Configuração inválida" }, { status: 400 });
   }
-  const professionalLimit = access.plan === "starter" ? 3 : access.plan === "pro" ? 10 : Number.POSITIVE_INFINITY;
+  const professionalLimit = access.plan === "starter" ? 1 : access.plan === "pro" ? 5 : Number.POSITIVE_INFINITY;
   if (data.barbers.length > professionalLimit) {
     return Response.json(
-      { error: `O plano ${access.plan === "starter" ? "Starter" : "Pro"} permite atÃ© ${professionalLimit} profissionais` },
+      { error: `O plano ${access.plan === "starter" ? "Starter" : "Pro"} permite até ${professionalLimit} profissionais` },
       { status: 403 },
     );
   }
+  const previousPhotos = await env.DB.prepare(
+    "SELECT photo_key AS photoKey FROM barbers WHERE tenant_id = ? AND photo_key IS NOT NULL",
+  ).bind(access.tenantId).all<{ photoKey: string }>();
+  const previousAccess = await env.DB.prepare(
+    "SELECT email FROM barbers WHERE tenant_id = ? AND access_enabled = 1 AND email != ''",
+  ).bind(access.tenantId).all<{ email: string }>();
+  const retainedPhotos = new Set(data.barbers.map((barber) => safePhotoKey(barber.photoKey, access.tenantId)).filter(Boolean));
+  const retainedAccess = new Set(data.barbers
+    .filter((barber) => barber.active && barber.accessEnabled && barber.email)
+    .map((barber) => String(barber.email).trim().toLowerCase()));
+  const revokedEmails = previousAccess.results
+    .map((item) => item.email.toLowerCase())
+    .filter((email) => !retainedAccess.has(email));
   const statements = [
     env.DB.prepare("DELETE FROM services WHERE tenant_id = ?").bind(access.tenantId),
     env.DB.prepare("DELETE FROM barbers WHERE tenant_id = ?").bind(access.tenantId),
     env.DB.prepare("DELETE FROM business_hours WHERE tenant_id = ?").bind(access.tenantId),
     ...data.services.map((x) => env.DB.prepare("INSERT INTO services (tenant_id, name, price, duration, active) VALUES (?, ?, ?, ?, ?)").bind(access.tenantId, x.name.trim(), x.price, x.duration, x.active ? 1 : 0)),
     ...data.barbers.map((x) => env.DB.prepare(`INSERT INTO barbers
-      (tenant_id, name, email, phone, role, commission, services, work_days,
+      (tenant_id, name, email, phone, photo_key, access_enabled, access_must_change, role, commission, services, work_days,
        work_start, work_end, break_start, break_end, time_off, permissions, active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
         access.tenantId,
         x.name.trim(),
         (x.email || "").trim().toLowerCase(),
         (x.phone || "").trim(),
+        safePhotoKey(x.photoKey, access.tenantId),
+        x.accessEnabled ? 1 : 0,
+        x.accessMustChange ? 1 : 0,
         (x.role || "Barbeiro").trim(),
         Math.min(100, Math.max(0, Number(x.commission) || 0)),
         JSON.stringify(Array.isArray(x.services) ? x.services : []),
@@ -129,8 +151,13 @@ export async function POST(request: Request) {
         x.active ? 1 : 0,
       )),
     ...data.hours.map((x) => env.DB.prepare("INSERT INTO business_hours (tenant_id, label, days, open, close, active) VALUES (?, ?, ?, ?, ?, ?)").bind(access.tenantId, x.label.trim(), x.days, x.open, x.close, x.active ? 1 : 0)),
+    ...revokedEmails.map((email) => env.DB.prepare("DELETE FROM salonos_sessions WHERE lower(email) = lower(?)").bind(email)),
   ];
   await env.DB.batch(statements);
+  const removedPhotos = previousPhotos.results.map((item) => item.photoKey).filter((key) => !retainedPhotos.has(key));
+  if (removedPhotos.length) {
+    await (env as unknown as { MEDIA: R2Bucket }).MEDIA.delete(removedPhotos);
+  }
   return Response.json({ ok: true, updatedBy: access.user.email });
 }
 
@@ -171,4 +198,8 @@ function validTime(value: unknown, fallback: string) {
   return /^\d{2}:\d{2}$/.test(text) ? text : fallback;
 }
 
+function safePhotoKey(value: unknown, tenantId: string) {
+  const key = String(value || "");
+  return key.startsWith(`barbers/${tenantId}/`) ? key : null;
+}
 

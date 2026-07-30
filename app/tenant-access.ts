@@ -15,6 +15,7 @@ export type TenantAccess = {
   isPlatformOwner: boolean;
   role: "platform_owner" | "tenant_owner" | "staff";
   staffName: string | null;
+  mustChangePassword: boolean;
   permissions: TenantPermissions;
 };
 
@@ -43,6 +44,7 @@ export async function getTenantAccess(
       isPlatformOwner: true,
       role: "platform_owner",
       staffName: null,
+      mustChangePassword: false,
       permissions: fullPermissions(),
     };
   }
@@ -72,16 +74,17 @@ export async function getTenantAccess(
       isPlatformOwner: false,
       role: "tenant_owner",
       staffName: null,
+      mustChangePassword: false,
       permissions: fullPermissions(),
     };
   }
 
   const staff = await env.DB.prepare(
     `SELECT t.id, t.name AS tenantName, t.slug, t.business_type AS businessType,
-      t.theme, t.plan, b.name AS staffName, b.permissions
+      t.theme, t.plan, b.name AS staffName, b.permissions, b.access_must_change AS accessMustChange
      FROM barbers b
      INNER JOIN tenants t ON t.id = b.tenant_id
-     WHERE lower(b.email) = lower(?) AND b.active = 1 AND t.active = 1
+     WHERE lower(b.email) = lower(?) AND b.active = 1 AND b.access_enabled = 1 AND t.active = 1
        AND (? = '' OR t.id = ?)
      ORDER BY b.id LIMIT 1`,
   ).bind(user.email, requestedTenant?.trim() || "", requestedTenant?.trim() || "").first<{
@@ -93,6 +96,7 @@ export async function getTenantAccess(
     businessType: "salon" | "barbershop";
     theme: "black" | "white";
     plan: string;
+    accessMustChange: number;
   }>();
   if (!staff) return null;
   const permissions = parsePermissions(staff.permissions);
@@ -109,6 +113,7 @@ export async function getTenantAccess(
     isPlatformOwner: false,
     role: "staff",
     staffName: staff.staffName,
+    mustChangePassword: Boolean(staff.accessMustChange),
     permissions,
   };
 }
