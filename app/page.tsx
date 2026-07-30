@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import {
   BadgePercent,
@@ -40,7 +40,8 @@ const appointments = [
 
 const navItems = ["Visão geral", "Agenda", "Clientes", "Equipe", "Serviços", "Financeiro", "Estoque"];
 const adminNavIcons = [LayoutDashboard, CalendarDays, UserRound, UsersRound, Scissors, CircleDollarSign, PackageOpen];
-const masterNavIcons = [LayoutDashboard, Store, CreditCard, BadgePercent, History, LifeBuoy];
+const masterNavItems = ["Visão geral", "Estabelecimentos", "Assinaturas", "Planos", "Usuários Master", "Atividades", "Suporte"];
+const masterNavIcons = [LayoutDashboard, Store, CreditCard, BadgePercent, UsersRound, History, LifeBuoy];
 type PanelPermissions = { agenda: boolean; clients: boolean; finance: boolean; settings: boolean };
 const allPanelPermissions: PanelPermissions = { agenda: true, clients: true, finance: true, settings: true };
 
@@ -118,6 +119,14 @@ type AuditEntry = {
   createdAt: number;
 };
 
+type PlatformAdminSummary = {
+  email: string;
+  displayName: string;
+  primary: boolean;
+  current: boolean;
+  createdAt?: number;
+};
+
 type TenantOnboarding = {
   name: string;
   slug: string;
@@ -150,6 +159,29 @@ const defaultConfig: BusinessConfig = {
   ],
 };
 
+const LIVE_REFRESH_INTERVAL = 15_000;
+
+function useAutoRefresh(refresh: () => void, enabled = true) {
+  const refreshRef = useRef(refresh);
+  useEffect(() => {
+    refreshRef.current = refresh;
+  });
+  useEffect(() => {
+    if (!enabled) return;
+    const refreshVisibleData = () => {
+      if (document.visibilityState === "visible") refreshRef.current();
+    };
+    const timer = window.setInterval(refreshVisibleData, LIVE_REFRESH_INTERVAL);
+    window.addEventListener("focus", refreshVisibleData);
+    document.addEventListener("visibilitychange", refreshVisibleData);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshVisibleData);
+      document.removeEventListener("visibilitychange", refreshVisibleData);
+    };
+  }, [enabled]);
+}
+
 export default function Home() {
   const [view, setView] = useState<View>("landing");
   const [activeNav, setActiveNav] = useState("Visão geral");
@@ -168,6 +200,7 @@ export default function Home() {
   const [tenantPlan, setTenantPlan] = useState("starter");
   const [shareNotice, setShareNotice] = useState("");
   const [userName, setUserName] = useState("Administrador");
+  const [masterRole, setMasterRole] = useState("Proprietário");
   const [accountRole, setAccountRole] = useState<"owner" | "staff" | "demo">("demo");
   const [permissions, setPermissions] = useState<PanelPermissions>(allPanelPermissions);
   const [saveNotice, setSaveNotice] = useState("");
@@ -189,9 +222,19 @@ export default function Home() {
         setSignedIn(true);
         setIsPlatformOwner(Boolean(user.isOwner));
         setUserName(user.staffName || user.displayName || user.email);
+        if (user.ownerRole) setMasterRole(user.ownerRole);
         setAccountRole(user.role === "staff" ? "staff" : "owner");
         setMustChangePassword(Boolean(user.mustChangePassword));
         if (user.permissions) setPermissions(user.permissions);
+        const authenticatedView: View = user.isOwner ? "master" : "admin";
+        if (window.localStorage.getItem("salonos:last-view") === authenticatedView) {
+          const savedNav = window.localStorage.getItem(`salonos:last-nav:${authenticatedView}`);
+          const allowedNav = authenticatedView === "master"
+            ? masterNavItems
+            : [...navItems, "Configurações"];
+          if (savedNav && allowedNav.includes(savedNav)) setActiveNav(savedNav);
+          setView(authenticatedView);
+        }
         if (new URLSearchParams(window.location.search).get("emergency") === "1") {
           setView(user.isOwner ? "master" : "admin");
           window.history.replaceState({}, "", "/");
@@ -203,6 +246,12 @@ export default function Home() {
   useEffect(() => {
     if (view === "login" && signedIn) setView(isPlatformOwner ? "master" : "admin");
   }, [view, signedIn, isPlatformOwner]);
+
+  useEffect(() => {
+    if (!signedIn || (view !== "admin" && view !== "master")) return;
+    window.localStorage.setItem("salonos:last-view", view);
+    window.localStorage.setItem(`salonos:last-nav:${view}`, activeNav);
+  }, [activeNav, signedIn, view]);
 
   async function saveConfig(next: BusinessConfig) {
     setSaveNotice("Salvando...");
@@ -357,6 +406,7 @@ export default function Home() {
       setSignedIn(true);
       setIsPlatformOwner(Boolean(user.isOwner));
       setUserName(user.staffName || user.displayName || user.email);
+      if (user.ownerRole) setMasterRole(user.ownerRole);
       setAccountRole(user.role === "staff" ? "staff" : "owner");
       setMustChangePassword(Boolean(user.mustChangePassword));
       setTenantId(managedTenant);
@@ -394,13 +444,13 @@ export default function Home() {
     <main className={`app-shell ${view === "admin" && tenantBusinessType === "salon" ? "manager-white" : ""}`}>
       <aside className="sidebar">
         <Logo />
-        <div className="workspace">{view === "master" ? <span className="workspace-icon">S</span> : <TenantWorkspaceMark tenantId={tenantId} tenantName={tenantName} />}<span><strong>{view === "master" ? "SalonOS Master" : tenantName}</strong><small>{view === "master" ? "Super administrador" : `${accountRole === "staff" ? "Acesso da equipe" : "Gestão da unidade"} · Plano ${tenantPlanLabel}`}</small></span><b>⌄</b></div>
-        <nav>{(view === "master" ? ["Visão geral", "Estabelecimentos", "Assinaturas", "Planos", "Atividades", "Suporte"] : visibleAdminNav).map((item, i) => {
+        <div className="workspace">{view === "master" ? <span className="workspace-icon">S</span> : <TenantWorkspaceMark tenantId={tenantId} tenantName={tenantName} />}<span><strong>{view === "master" ? "SalonOS Master" : tenantName}</strong><small>{view === "master" ? masterRole : `${accountRole === "staff" ? "Acesso da equipe" : "Gestão da unidade"} · Plano ${tenantPlanLabel}`}</small></span><b>⌄</b></div>
+        <nav>{(view === "master" ? masterNavItems : visibleAdminNav).map((item, i) => {
           const iconIndex = view === "master" ? i : navItems.indexOf(item);
           const NavIcon = (view === "master" ? masterNavIcons : adminNavIcons)[iconIndex];
           return <button key={item} className={activeNav === item || (i === 0 && !activeNav) ? "active" : ""} onClick={() => { setQuickAction(null); setActiveNav(item); }}><span><NavIcon aria-hidden="true" /></span>{item}</button>;
         })}</nav>
-        <div className="sidebar-bottom">{permissions.settings && <button className={activeNav === "Configurações" ? "active" : ""} onClick={() => { setQuickAction(null); setActiveNav("Configurações"); }}><Settings aria-hidden="true" /> Configurações</button>}<div className="user-chip"><span>{userName.slice(0, 2).toUpperCase()}</span><div><strong>{userName}</strong><small>{signedIn ? accountRole === "staff" ? "Acesso individual" : "Sessão protegida" : "Demonstração"}</small></div><button aria-label={signedIn ? "Sair" : "Entrar"} onClick={() => window.location.assign(signedIn ? "/api/auth/logout" : "/")}>{signedIn ? <LogOut aria-hidden="true" /> : <LogIn aria-hidden="true" />}</button></div></div>
+        <div className="sidebar-bottom">{permissions.settings && <button className={activeNav === "Configurações" ? "active" : ""} onClick={() => { setQuickAction(null); setActiveNav("Configurações"); }}><Settings aria-hidden="true" /> Configurações</button>}<div className="user-chip"><span>{userName.slice(0, 2).toUpperCase()}</span><div><strong>{userName}</strong><small>{signedIn ? view === "master" ? masterRole : accountRole === "staff" ? "Acesso individual" : "Sessão protegida" : "Demonstração"}</small></div><button aria-label={signedIn ? "Sair" : "Entrar"} onClick={() => window.location.assign(signedIn ? "/api/auth/logout" : "/")}>{signedIn ? <LogOut aria-hidden="true" /> : <LogIn aria-hidden="true" />}</button></div></div>
       </aside>
       <section className="app-main">
         <header className="app-header"><div><span className="mobile-label">SalonOS</span><h1>{title}</h1><p>{view === "master" ? "Acompanhe toda a operação da plataforma." : (shareNotice || (accountRole === "staff" ? "Acesso conforme suas permissões" : "Gestão da sua barbearia"))}</p></div><div className="header-tools"><button className="icon-button" aria-label="Buscar"><Search aria-hidden="true" /></button><button className="icon-button" aria-label="Notificações"><Bell aria-hidden="true" /></button>{view === "admin" && <button className="outline-button compact" onClick={copyBookingLink}><Link2 aria-hidden="true" /> Copiar link</button>}{view === "admin" && permissions.agenda && <button className="gold-button compact" onClick={() => openQuickAction("appointment")}><CalendarRange aria-hidden="true" /> Novo agendamento</button>}</div></header>
@@ -961,6 +1011,7 @@ function ClientsContent({ tenantId, quickAction, onActionHandled }: {
   }
 
   useEffect(() => { loadClients(); }, [tenantId]);
+  useAutoRefresh(loadClients);
   useEffect(() => {
     if (quickAction === "client") {
       setCreating(true);
@@ -1061,9 +1112,9 @@ function FinanceContent({ tenantId }: { tenantId: string }) {
   } | null>(null);
   const [notice, setNotice] = useState("Carregando resultados...");
 
-  useEffect(() => {
-    setNotice("Carregando resultados...");
-    fetch(`/api/finance?tenant=${encodeURIComponent(tenantId)}&period=${period}`)
+  function loadFinance(silent = false) {
+    if (!silent) setNotice("Carregando resultados...");
+    return fetch(`/api/finance?tenant=${encodeURIComponent(tenantId)}&period=${period}`)
       .then(async (response) => {
         if (response.status === 401) {
           setNotice("Entre com sua conta para visualizar o financeiro.");
@@ -1077,7 +1128,12 @@ function FinanceContent({ tenantId }: { tenantId: string }) {
         if (result) setNotice("");
       })
       .catch(() => setNotice("Não foi possível carregar o financeiro agora."));
+  }
+
+  useEffect(() => {
+    loadFinance();
   }, [period, tenantId]);
+  useAutoRefresh(() => { loadFinance(true); });
 
   const summary = data?.summary || { completedAppointments: 0, revenue: 0, averageTicket: 0, commissions: 0, netAfterCommissions: 0 };
   const maxRevenue = Math.max(...(data?.barbers || []).map((item) => Number(item.revenue)), 1);
@@ -1131,8 +1187,8 @@ function AgendaContent({ tenantId, config, quickAction, onActionHandled }: {
     return day;
   }), [weekStart]);
 
-  function loadWeek() {
-    setNotice("Atualizando agenda...");
+  function loadWeek(silent = false) {
+    if (!silent) setNotice("Atualizando agenda...");
     return fetch(`/api/appointments?tenant=${encodeURIComponent(tenantId)}`)
       .then(async (response) => {
         if (!response.ok) throw new Error();
@@ -1146,6 +1202,7 @@ function AgendaContent({ tenantId, config, quickAction, onActionHandled }: {
   }
 
   useEffect(() => { loadWeek(); }, [tenantId]);
+  useAutoRefresh(() => { loadWeek(true); });
   useEffect(() => {
     if (quickAction === "appointment" || quickAction === "blocked") {
       setCreationKind(quickAction);
@@ -1268,15 +1325,22 @@ function DashboardContent({ mini = false, config = defaultConfig, tenantId = "ch
       .catch(() => setAgendaNotice("Não foi possível carregar a agenda agora."));
   }
 
+  function loadDashboard() {
+    if (mini) return Promise.resolve();
+    return fetch(`/api/dashboard?tenant=${encodeURIComponent(tenantId)}`)
+      .then((response) => response.ok ? response.json() : null)
+      .then(setDashboardData)
+      .catch(() => setDashboardData(null));
+  }
+
   useEffect(() => {
     loadAgenda();
-    if (!mini) {
-      fetch(`/api/dashboard?tenant=${encodeURIComponent(tenantId)}`)
-        .then((response) => response.ok ? response.json() : null)
-        .then(setDashboardData)
-        .catch(() => setDashboardData(null));
-    }
+    loadDashboard();
   }, [mini, tenantId]);
+  useAutoRefresh(() => {
+    loadAgenda();
+    loadDashboard();
+  }, !mini);
 
   const displayAppointments = mini ? appointments : liveAppointments;
   const metrics = mini ? [
@@ -1517,6 +1581,7 @@ function MasterContent({ section, onNavigate }: { section: string; onNavigate: (
   }
 
   useEffect(() => { loadTenants(); }, []);
+  useAutoRefresh(loadTenants);
 
   async function createTenant(values: TenantOnboarding, logo: File | null) {
     setFormNotice("Criando estabelecimento...");
@@ -1709,6 +1774,10 @@ function MasterContent({ section, onNavigate }: { section: string; onNavigate: (
     return <AuditLogContent tenants={tenants} />;
   }
 
+  if (section === "Usuários Master") {
+    return <PlatformAdminsContent />;
+  }
+
   if (section === "Configurações") {
     return <MasterAccessSettings />;
   }
@@ -1750,18 +1819,112 @@ function MasterContent({ section, onNavigate }: { section: string; onNavigate: (
   </div>;
 }
 
+function PlatformAdminsContent() {
+  const [admins, setAdmins] = useState<PlatformAdminSummary[]>([]);
+  const [limit, setLimit] = useState(2);
+  const [notice, setNotice] = useState("Carregando usuários...");
+  const [saving, setSaving] = useState(false);
+
+  function loadAdmins() {
+    return fetch("/api/platform-admins")
+      .then(async (response) => {
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.error || "Não foi possível carregar os usuários.");
+        setAdmins(data.admins || []);
+        setLimit(Number(data.limit || 2));
+        setNotice("");
+      })
+      .catch((error) => setNotice(error instanceof Error ? error.message : "Não foi possível carregar os usuários."));
+  }
+
+  useEffect(() => { loadAdmins(); }, []);
+  useAutoRefresh(loadAdmins);
+
+  async function saveAdmin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setSaving(true);
+    setNotice("Criando acesso geral...");
+    const response = await fetch("/api/platform-admins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        displayName: data.get("displayName"),
+        email: data.get("email"),
+        password: data.get("password"),
+      }),
+    });
+    const result = await response.json().catch(() => null);
+    setSaving(false);
+    if (!response.ok) {
+      setNotice(result?.error || "Não foi possível criar o usuário.");
+      return;
+    }
+    form.reset();
+    setNotice("Administrador geral criado com sucesso.");
+    await loadAdmins();
+  }
+
+  async function removeAdmin(admin: PlatformAdminSummary) {
+    if (!window.confirm(`Remover o acesso geral de ${admin.displayName}?`)) return;
+    setNotice(`Removendo ${admin.displayName}...`);
+    const response = await fetch("/api/platform-admins", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: admin.email }),
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      setNotice(result?.error || "Não foi possível remover o usuário.");
+      return;
+    }
+    setNotice("Acesso removido.");
+    await loadAdmins();
+  }
+
+  const additionalAdmins = admins.filter((admin) => !admin.primary);
+  const available = Math.max(0, limit - additionalAdmins.length);
+
+  return <div className="owner-page master-section-page platform-admin-page">
+    <div className="settings-intro owner-intro"><div><span className="section-kicker">ACESSO GERAL</span><h2>Usuários Master</h2><p>Cadastre até dois administradores adicionais com controle completo da plataforma.</p></div></div>
+    <div className="owner-metrics"><article><small>PROPRIETÁRIO PRINCIPAL</small><strong>Rafael Doneda</strong><span>Acesso permanente</span></article><article><small>ADMINISTRADORES ADICIONAIS</small><strong>{additionalAdmins.length}/{limit}</strong><span>Comando geral</span></article><article><small>VAGAS DISPONÍVEIS</small><strong>{available}</strong><span>Limite protegido</span></article></div>
+    <div className="platform-admin-layout">
+      <section className="panel platform-admin-form">
+        <header><ShieldCheck aria-hidden="true" /><div><h3>Novo administrador geral</h3><p>O usuário terá acesso a empresas, planos, atividades e configurações.</p></div></header>
+        <form onSubmit={saveAdmin}>
+          <label>Nome completo<input name="displayName" required placeholder="Nome do administrador" /></label>
+          <label>E-mail<input name="email" type="email" required placeholder="usuario@empresa.com" /></label>
+          <label>Senha inicial<input name="password" type="password" minLength={8} required placeholder="Mínimo de 8 caracteres" /></label>
+          <button className="gold-button full" disabled={saving || available === 0}>{saving ? "Criando acesso..." : available === 0 ? "Limite atingido" : "Criar administrador"}</button>
+        </form>
+        {notice && <p className="commercial-note">{notice}</p>}
+      </section>
+      <section className="panel platform-admin-list">
+        <header><div><h3>Acessos com comando geral</h3><p>Todos os usuários abaixo podem administrar integralmente o SalonOS.</p></div></header>
+        {admins.map((admin) => <article key={admin.email}>
+          <span className="platform-admin-avatar">{admin.displayName.slice(0, 2).toUpperCase()}</span>
+          <span><strong>{admin.displayName}</strong><small>{admin.email}</small></span>
+          <em>{admin.primary ? "PROPRIETÁRIO" : admin.current ? "VOCÊ" : "ADMIN GERAL"}</em>
+          {!admin.primary && !admin.current && <button className="owner-delete" onClick={() => removeAdmin(admin)}>Remover</button>}
+        </article>)}
+      </section>
+    </div>
+  </div>;
+}
+
 function AuditLogContent({ tenants }: { tenants: TenantSummary[] }) {
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [tenantFilter, setTenantFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [notice, setNotice] = useState("Carregando atividades...");
 
-  useEffect(() => {
+  function loadAudit(silent = false) {
     const params = new URLSearchParams();
     if (tenantFilter) params.set("tenant", tenantFilter);
     if (categoryFilter) params.set("category", categoryFilter);
-    setNotice("Carregando atividades...");
-    fetch(`/api/audit?${params.toString()}`)
+    if (!silent) setNotice("Carregando atividades...");
+    return fetch(`/api/audit?${params.toString()}`)
       .then(async (response) => {
         if (!response.ok) throw new Error();
         return response.json();
@@ -1771,7 +1934,12 @@ function AuditLogContent({ tenants }: { tenants: TenantSummary[] }) {
         setNotice(data.logs?.length ? "" : "Nenhuma atividade encontrada para estes filtros.");
       })
       .catch(() => setNotice("Não foi possível carregar o histórico."));
+  }
+
+  useEffect(() => {
+    loadAudit();
   }, [tenantFilter, categoryFilter]);
+  useAutoRefresh(() => { loadAudit(true); });
 
   const categories: Record<string, string> = {
     company: "Empresa",
@@ -1804,7 +1972,7 @@ function MasterAccessSettings() {
     const response = await fetch("/api/auth/manage-user", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password: form.get("password"), displayName: "SalonOS Master" }),
+      body: JSON.stringify({ email, password: form.get("password"), displayName: "Rafael Doneda" }),
     });
     const data = await response.json().catch(() => null);
     setSaving(false);
@@ -1812,7 +1980,7 @@ function MasterAccessSettings() {
     if (response.ok) event.currentTarget.reset();
   }
 
-  return <div className="owner-page master-section-page"><div className="settings-intro owner-intro"><div><span className="section-kicker">SEGURANÇA</span><h2>Acesso do Master</h2><p>Configure seu login próprio do SalonOS antes de remover o acesso de emergência.</p></div></div><section className="panel master-password-panel"><ShieldCheck aria-hidden="true" /><div><h3>Definir senha do proprietário</h3><p>O e-mail abaixo continuará sendo o único com acesso ao Painel Master.</p><form onSubmit={savePassword}><label>E-mail<input value={email} readOnly /></label><label>Nova senha<input name="password" type="password" minLength={8} required placeholder="Mínimo de 8 caracteres" /></label><button className="gold-button compact" disabled={saving}>{saving ? "Salvando..." : "Salvar senha do Master"}</button></form>{notice && <p className="commercial-note">{notice}</p>}</div></section><section className="panel no-payment-banner"><ShieldCheck aria-hidden="true" /><span><strong>Migração protegida</strong><small>O acesso via ChatGPT permanece disponível como emergência até você testar o novo login.</small></span></section></div>;
+  return <div className="owner-page master-section-page"><div className="settings-intro owner-intro"><div><span className="section-kicker">SEGURANÇA</span><h2>Acesso do Master</h2><p>Configure o login próprio do proprietário principal do SalonOS.</p></div></div><section className="panel master-password-panel"><ShieldCheck aria-hidden="true" /><div><h3>Rafael Doneda · Proprietário</h3><p>Esta é a conta principal e permanente do Painel Master.</p><form onSubmit={savePassword}><label>E-mail<input value={email} readOnly /></label><label>Nova senha<input name="password" type="password" minLength={8} required placeholder="Mínimo de 8 caracteres" /></label><button className="gold-button compact" disabled={saving}>{saving ? "Salvando..." : "Salvar senha do Master"}</button></form>{notice && <p className="commercial-note">{notice}</p>}</div></section><section className="panel no-payment-banner"><ShieldCheck aria-hidden="true" /><span><strong>Acesso principal protegido</strong><small>Administradores adicionais podem ser gerenciados em Usuários Master.</small></span></section></div>;
 }
 
 function TenantOnboardingWizard({ notice, onClose, onFinish }: {
@@ -1899,6 +2067,7 @@ function InventoryContent({ tenantId }: { tenantId: string }) {
     const data = await r.json(); if (!r.ok) throw new Error(data.error); setProducts(data.products || []); setNotice("");
   }).catch((e) => setNotice(e.message || "Não foi possível carregar o estoque."));
   useEffect(() => { load(); }, [tenantId]);
+  useAutoRefresh(load);
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
     const response = await fetch(`/api/inventory?tenant=${encodeURIComponent(tenantId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(form)) });
@@ -1923,4 +2092,5 @@ function InventoryContent({ tenantId }: { tenantId: string }) {
 function Footer() {
   return <footer><div className="shell"><Logo /><p>O sistema operacional do seu negócio.</p><span>© 2026 SalonOS</span></div></footer>;
 }
+
 
