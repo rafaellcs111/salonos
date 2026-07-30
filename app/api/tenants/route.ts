@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   const ownerEmail = String(body.ownerEmail || "").trim().toLowerCase();
   const plan = ["starter", "pro", "premium"].includes(String(body.plan)) ? String(body.plan) : "pro";
   const businessType = body.businessType === "salon" ? "salon" : "barbershop";
-  const theme = body.theme === "white" ? "white" : "black";
+  const theme = businessType === "barbershop" ? "black" : body.theme === "white" ? "white" : "black";
   const active = body.active === false ? 0 : 1;
   if (!name || slug.length < 3 || !city || !phone || !ownerEmail) {
     return Response.json({ error: "Preencha nome, cidade, telefone, e-mail do responsável e um endereço válido" }, { status: 400 });
@@ -121,7 +121,8 @@ export async function PATCH(request: Request) {
     }
   }
   const businessType = body.businessType === undefined ? String(current.businessType) : body.businessType;
-  const theme = body.theme === undefined ? String(current.theme) : body.theme;
+  const requestedTheme = body.theme === undefined ? String(current.theme) : body.theme;
+  const theme = businessType === "barbershop" ? "black" : requestedTheme;
   if (!["salon", "barbershop"].includes(businessType) || !["black", "white"].includes(theme)) {
     return Response.json({ error: "Tipo de empresa ou tema inválido" }, { status: 400 });
   }
@@ -221,4 +222,5 @@ export async function DELETE(request: Request) {
   });
   return Response.json({ ok: true });
 }
+
 
