@@ -101,6 +101,12 @@ export const salonosSessions = sqliteTable("salonos_sessions", {
   createdAt: integer("created_at").notNull(),
 });
 
+export const platformAdmins = sqliteTable("platform_admins", {
+  email: text("email").primaryKey(),
+  displayName: text("display_name").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
 export const inventoryProducts = sqliteTable("inventory_products", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   tenantId: text("tenant_id").notNull(),
@@ -112,3 +118,4 @@ export const inventoryProducts = sqliteTable("inventory_products", {
   salePrice: integer("sale_price").notNull().default(0),
   updatedAt: integer("updated_at").notNull(),
 });
+
