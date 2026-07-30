@@ -1,6 +1,11 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSalonOSSessionUser } from "./supabase-auth";
+import {
+  findPlatformAdmin,
+  isPrimaryPlatformOwner,
+  PRIMARY_PLATFORM_OWNER_NAME,
+} from "./platform-admins";
 
 export type ChatGPTUser = {
   displayName: string;
@@ -16,7 +21,6 @@ const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
 const SIGN_IN_PATH = "/signin-with-chatgpt";
 const SIGN_OUT_PATH = "/signout-with-chatgpt";
 const CALLBACK_PATH = "/callback";
-const BARBEROS_OWNER_EMAIL = "rafaelviamaquinas@gmail.com";
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const localSession = await getSalonOSSessionUser();
@@ -41,7 +45,14 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
 
 export async function getBarberOSOwner(): Promise<ChatGPTUser | null> {
   const user = await getChatGPTUser();
-  return user?.email.toLowerCase() === BARBEROS_OWNER_EMAIL ? user : null;
+  if (!user) return null;
+  if (isPrimaryPlatformOwner(user.email)) {
+    return { ...user, displayName: PRIMARY_PLATFORM_OWNER_NAME, fullName: PRIMARY_PLATFORM_OWNER_NAME };
+  }
+  const admin = await findPlatformAdmin(user.email);
+  return admin
+    ? { ...user, displayName: admin.displayName, fullName: admin.displayName }
+    : null;
 }
 
 export async function requireChatGPTUser(
@@ -93,3 +104,4 @@ function safeDecodeURIComponent(value: string): string | null {
     return null;
   }
 }
+
