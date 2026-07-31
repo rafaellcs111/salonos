@@ -58,6 +58,7 @@ export const barbers = sqliteTable("barbers", {
   photoKey: text("photo_key"),
   accessEnabled: integer("access_enabled", { mode: "boolean" }).notNull().default(false),
   accessMustChange: integer("access_must_change", { mode: "boolean" }).notNull().default(false),
+  temporaryPasswordHash: text("temporary_password_hash"),
   role: text("role").notNull().default("Barbeiro"),
   commission: integer("commission").notNull().default(30),
   services: text("services").notNull().default("[]"),
@@ -106,6 +107,16 @@ export const platformAdmins = sqliteTable("platform_admins", {
   displayName: text("display_name").notNull(),
   createdAt: integer("created_at").notNull(),
 });
+
+export const rateLimits = sqliteTable("rate_limits", {
+  keyHash: text("key_hash").notNull(),
+  namespace: text("namespace").notNull(),
+  windowStartedAt: integer("window_started_at").notNull(),
+  requestCount: integer("request_count").notNull().default(0),
+  expiresAt: integer("expires_at").notNull(),
+}, (table) => [
+  uniqueIndex("rate_limits_key_window_unique").on(table.keyHash, table.windowStartedAt),
+]);
 
 export const inventoryProducts = sqliteTable("inventory_products", {
   id: integer("id").primaryKey({ autoIncrement: true }),

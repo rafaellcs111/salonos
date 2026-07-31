@@ -157,30 +157,72 @@ test("shows tenant branding and stores professional photos per establishment", a
   assert.equal(JSON.parse(hosting).r2, "MEDIA");
 });
 
-test("provisions staff access with a one-time temporary password", async () => {
-  const [page, manageUser, changePassword, tenantAccess, me, config, migration] = await Promise.all([
+test("provisions staff access with a unique one-time temporary password", async () => {
+  const [page, manageUser, changePassword, tenantAccess, me, config, migration, security] = await Promise.all([
     source("app/page.tsx"),
     source("app/api/auth/manage-user/route.ts"),
     source("app/api/auth/change-password/route.ts"),
     source("app/tenant-access.ts"),
     source("app/api/me/route.ts"),
     source("app/api/config/route.ts"),
-    source("drizzle/0016_staff_access.sql"),
+    source("drizzle/0018_security_foundation.sql"),
+    source("app/security.ts"),
   ]);
 
-  assert.match(manageUser, /const TEMPORARY_PASSWORD = "12345678"/);
+  assert.match(manageUser, /generateTemporaryPassword\(\)/);
+  assert.match(manageUser, /temporaryPasswordHash\(temporaryPassword\)/);
+  assert.doesNotMatch(manageUser, /12345678/);
   assert.match(manageUser, /getTenantAccess\(body\.tenant, "settings"\)/);
   assert.match(manageUser, /access_enabled = 1, access_must_change = 1/);
   assert.match(manageUser, /getBarberOSOwner/);
-  assert.match(changePassword, /password === "12345678"/);
+  assert.match(changePassword, /temporaryPasswordHash\(password\)/);
+  assert.match(changePassword, /temporary_password_hash = NULL/);
   assert.match(changePassword, /access_must_change = 0/);
   assert.match(tenantAccess, /b\.access_enabled = 1/);
   assert.match(me, /mustChangePassword/);
   assert.match(config, /access_enabled AS accessEnabled/);
+  assert.match(config, /temporaryPasswordHashes/);
   assert.match(config, /revokedEmails/);
-  assert.match(migration, /access_must_change/);
+  assert.match(migration, /temporary_password_hash/);
+  assert.match(security, /crypto\.getRandomValues/);
   assert.match(page, /function PasswordChangeGate/);
-  assert.match(page, /Senha provisória padrão: 12345678/);
+  assert.match(page, /Senha provisória única/);
+  assert.doesNotMatch(page, /12345678/);
+});
+
+test("rate limits password login and anonymous bookings with privacy-safe keys", async () => {
+  const [security, login, appointments, migration] = await Promise.all([
+    source("app/security.ts"),
+    source("app/api/auth/login/route.ts"),
+    source("app/api/appointments/route.ts"),
+    source("drizzle/0018_security_foundation.sql"),
+  ]);
+
+  assert.match(security, /sha256\(`\$\{namespace\}:\$\{identifier/);
+  assert.match(security, /ON CONFLICT\(key_hash, window_started_at\)/);
+  assert.match(security, /"Retry-After"/);
+  assert.match(login, /namespace: "auth-login"/);
+  assert.match(login, /limit: 5/);
+  assert.match(appointments, /namespace: "public-booking"/);
+  assert.match(appointments, /limit: 20/);
+  assert.match(migration, /PRIMARY KEY \(key_hash, window_started_at\)/);
+});
+
+test("keeps tenant-owned operations scoped by the authenticated tenant", async () => {
+  const routes = await Promise.all([
+    source("app/api/appointments/route.ts"),
+    source("app/api/clients/route.ts"),
+    source("app/api/config/route.ts"),
+    source("app/api/dashboard/route.ts"),
+    source("app/api/finance/route.ts"),
+    source("app/api/inventory/route.ts"),
+  ]);
+
+  for (const route of routes) {
+    assert.match(route, /getTenantAccess\(/);
+    assert.match(route, /access\.tenantId/);
+    assert.match(route, /tenant_id = \?/);
+  }
 });
 
 test("keeps Rafael Doneda as the permanent owner and supports two additional master users", async () => {

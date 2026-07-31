@@ -2,8 +2,7 @@ import { env } from "cloudflare:workers";
 import { getBarberOSOwner } from "../../../chatgpt-auth";
 import { upsertSupabaseUser } from "../../../supabase-auth";
 import { getTenantAccess } from "../../../tenant-access";
-
-const TEMPORARY_PASSWORD = "12345678";
+import { generateTemporaryPassword, temporaryPasswordHash } from "../../../security";
 
 export async function POST(request: Request) {
   const body = await request.json() as { tenant?: string; email?: string; password?: string; displayName?: string };
@@ -47,14 +46,17 @@ export async function POST(request: Request) {
     return Response.json({ error: "Este e-mail já está vinculado a outro acesso" }, { status: 409 });
   }
   try {
-    await upsertSupabaseUser(email, TEMPORARY_PASSWORD, professional.name);
+    const temporaryPassword = generateTemporaryPassword();
+    await upsertSupabaseUser(email, temporaryPassword, professional.name);
     await env.DB.batch([
       env.DB.prepare(
-        "UPDATE barbers SET access_enabled = 1, access_must_change = 1 WHERE id = ? AND tenant_id = ?",
-      ).bind(professional.id, access.tenantId),
+        `UPDATE barbers
+         SET access_enabled = 1, access_must_change = 1, temporary_password_hash = ?
+         WHERE id = ? AND tenant_id = ?`,
+      ).bind(await temporaryPasswordHash(temporaryPassword), professional.id, access.tenantId),
       env.DB.prepare("DELETE FROM salonos_sessions WHERE lower(email) = lower(?)").bind(email),
     ]);
-    return Response.json({ ok: true, temporaryPassword: TEMPORARY_PASSWORD });
+    return Response.json({ ok: true, temporaryPassword });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Não foi possível criar o acesso" }, { status: 400 });
   }
@@ -71,7 +73,9 @@ export async function DELETE(request: Request) {
   if (!professional) return Response.json({ error: "Profissional não encontrado" }, { status: 404 });
   await env.DB.batch([
     env.DB.prepare(
-      "UPDATE barbers SET access_enabled = 0, access_must_change = 0 WHERE id = ? AND tenant_id = ?",
+      `UPDATE barbers
+       SET access_enabled = 0, access_must_change = 0, temporary_password_hash = NULL
+       WHERE id = ? AND tenant_id = ?`,
     ).bind(professional.id, access.tenantId),
     env.DB.prepare("DELETE FROM salonos_sessions WHERE lower(email) = lower(?)").bind(email),
   ]);

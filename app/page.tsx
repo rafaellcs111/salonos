@@ -755,7 +755,7 @@ function ConfigContent({ config, section, onSave, notice, signedIn, tenantId, te
     }
     const barbers = draft.barbers.map((item, i) => i === index ? { ...item, accessEnabled: true, accessMustChange: true } : item);
     setDraft({ ...draft, barbers });
-    setAccessNotice(`Acesso liberado para ${professional.email}. Senha provisória: 12345678`);
+    setAccessNotice(`Acesso liberado para ${professional.email}. Senha provisória única: ${data.temporaryPassword}`);
   }
 
   async function revokeStaffAccess(index: number) {
@@ -825,7 +825,7 @@ function ConfigContent({ config, section, onSave, notice, signedIn, tenantId, te
             ["clients", "Clientes"],
             ["finance", "Financeiro"],
             ["settings", "Configurações"],
-          ].map(([permission, label]) => <label key={permission}><input type="checkbox" checked={Boolean(barber.permissions?.[permission as keyof typeof barber.permissions])} onChange={(e) => updatePermission(index, permission as "agenda" | "clients" | "finance" | "settings", e.target.checked)} /><span>{label}</span></label>)}</div><div className="staff-access-control"><span><strong>{barber.accessEnabled ? "Acesso individual ativo" : "Acesso ainda não criado"}</strong><small>{barber.accessEnabled ? barber.accessMustChange ? "Aguardando troca da senha provisória" : "Senha pessoal configurada" : "Salve o e-mail e libere o acesso quando estiver pronto."}</small></span><button type="button" className="outline-button" disabled={!barber.email} onClick={() => createStaffAccess(index)}>{barber.accessEnabled ? "Redefinir senha" : "Liberar acesso"}</button>{barber.accessEnabled && <button type="button" className="danger-button" onClick={() => revokeStaffAccess(index)}>Bloquear acesso</button>}</div><small className="permission-note">{barber.email ? "Senha provisória padrão: 12345678. A troca será obrigatória no primeiro login." : "Informe um e-mail para preparar o acesso individual."}</small></div>
+          ].map(([permission, label]) => <label key={permission}><input type="checkbox" checked={Boolean(barber.permissions?.[permission as keyof typeof barber.permissions])} onChange={(e) => updatePermission(index, permission as "agenda" | "clients" | "finance" | "settings", e.target.checked)} /><span>{label}</span></label>)}</div><div className="staff-access-control"><span><strong>{barber.accessEnabled ? "Acesso individual ativo" : "Acesso ainda não criado"}</strong><small>{barber.accessEnabled ? barber.accessMustChange ? "Aguardando troca da senha provisória" : "Senha pessoal configurada" : "Salve o e-mail e libere o acesso quando estiver pronto."}</small></span><button type="button" className="outline-button" disabled={!barber.email} onClick={() => createStaffAccess(index)}>{barber.accessEnabled ? "Redefinir senha" : "Liberar acesso"}</button>{barber.accessEnabled && <button type="button" className="danger-button" onClick={() => revokeStaffAccess(index)}>Bloquear acesso</button>}</div><small className="permission-note">{barber.email ? "Uma senha provisória única será exibida ao liberar o acesso. A troca será obrigatória no primeiro login." : "Informe um e-mail para preparar o acesso individual."}</small></div>
         </article>)}
       </div>
       <button className="add-row team-add" disabled={reachedProfessionalLimit} onClick={() => setDraft({ ...draft, barbers: [...draft.barbers, { name: "Novo profissional", email: "", phone: "", photoKey: null, accessEnabled: false, accessMustChange: false, role: "Barbeiro", commission: 30, services: draft.services.filter((item) => item.active).map((item) => item.name), workDays: ["2", "3", "4", "5", "6"], workStart: "09:00", workEnd: "18:00", breakStart: "12:00", breakEnd: "13:00", timeOff: [], permissions: { agenda: true, clients: false, finance: false, settings: false }, active: true }] })}>{reachedProfessionalLimit ? "Limite do plano atingido" : "+ Adicionar profissional"}</button>
@@ -941,7 +941,7 @@ function PasswordChangeGate({ onChanged }: { onChanged: () => void }) {
     <ShieldCheck aria-hidden="true" />
     <span className="section-kicker">PRIMEIRO ACESSO</span>
     <h2>Crie sua senha pessoal</h2>
-    <p>A senha provisória 12345678 só pode ser usada uma vez.</p>
+    <p>A senha provisória recebida só pode ser usada no primeiro acesso.</p>
     <label>Nova senha<input name="password" type="password" minLength={8} required autoFocus autoComplete="new-password" /></label>
     <label>Confirmar nova senha<input name="confirmation" type="password" minLength={8} required autoComplete="new-password" /></label>
     {notice && <p className="editor-error">{notice}</p>}
