@@ -1,5 +1,10 @@
 import { env } from "cloudflare:workers";
 import { getTenantAccess } from "../../tenant-access";
+import {
+  consumeRateLimit,
+  rateLimitResponse,
+  requestClientAddress,
+} from "../../security";
 
 const TENANT = "chosen";
 const ALLOWED_STATUSES = new Set(["confirmed", "waiting", "completed", "cancelled", "blocked"]);
@@ -98,6 +103,15 @@ export async function POST(request: Request) {
     return Response.json({ error: "Barbearia indisponível" }, { status: 404 });
   }
   if (requestedStatus === "confirmed") {
+    const rateLimit = await consumeRateLimit({
+      namespace: "public-booking",
+      identifier: `${requestClientAddress(request)}:${requestedTenant}`,
+      limit: 20,
+      windowSeconds: 60 * 60,
+    });
+    if (!rateLimit.allowed) {
+      return rateLimitResponse(rateLimit, "Muitos agendamentos foram solicitados. Aguarde e tente novamente.");
+    }
     const availabilityError = await validateProfessionalSlot(requestedTenant, body);
     if (availabilityError) return Response.json({ error: availabilityError }, { status: 409 });
   }

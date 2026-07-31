@@ -104,8 +104,12 @@ export async function POST(request: Request) {
     "SELECT photo_key AS photoKey FROM barbers WHERE tenant_id = ? AND photo_key IS NOT NULL",
   ).bind(access.tenantId).all<{ photoKey: string }>();
   const previousAccess = await env.DB.prepare(
-    "SELECT email FROM barbers WHERE tenant_id = ? AND access_enabled = 1 AND email != ''",
-  ).bind(access.tenantId).all<{ email: string }>();
+    `SELECT email, temporary_password_hash AS temporaryPasswordHash
+     FROM barbers WHERE tenant_id = ? AND access_enabled = 1 AND email != ''`,
+  ).bind(access.tenantId).all<{ email: string; temporaryPasswordHash: string | null }>();
+  const temporaryPasswordHashes = new Map(
+    previousAccess.results.map((item) => [item.email.toLowerCase(), item.temporaryPasswordHash]),
+  );
   const retainedPhotos = new Set(data.barbers.map((barber) => safePhotoKey(barber.photoKey, access.tenantId)).filter(Boolean));
   const retainedAccess = new Set(data.barbers
     .filter((barber) => barber.active && barber.accessEnabled && barber.email)
@@ -119,9 +123,9 @@ export async function POST(request: Request) {
     env.DB.prepare("DELETE FROM business_hours WHERE tenant_id = ?").bind(access.tenantId),
     ...data.services.map((x) => env.DB.prepare("INSERT INTO services (tenant_id, name, price, duration, active) VALUES (?, ?, ?, ?, ?)").bind(access.tenantId, x.name.trim(), x.price, x.duration, x.active ? 1 : 0)),
     ...data.barbers.map((x) => env.DB.prepare(`INSERT INTO barbers
-      (tenant_id, name, email, phone, photo_key, access_enabled, access_must_change, role, commission, services, work_days,
+      (tenant_id, name, email, phone, photo_key, access_enabled, access_must_change, temporary_password_hash, role, commission, services, work_days,
        work_start, work_end, break_start, break_end, time_off, permissions, active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
         access.tenantId,
         x.name.trim(),
         (x.email || "").trim().toLowerCase(),
@@ -129,6 +133,9 @@ export async function POST(request: Request) {
         safePhotoKey(x.photoKey, access.tenantId),
         x.accessEnabled ? 1 : 0,
         x.accessMustChange ? 1 : 0,
+        x.accessEnabled && x.accessMustChange
+          ? temporaryPasswordHashes.get((x.email || "").trim().toLowerCase()) || null
+          : null,
         (x.role || "Barbeiro").trim(),
         Math.min(100, Math.max(0, Number(x.commission) || 0)),
         JSON.stringify(Array.isArray(x.services) ? x.services : []),
