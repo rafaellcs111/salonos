@@ -32,6 +32,7 @@ async function ensureAppointmentsTable() {
   const names = new Set(columns.results.map((column) => column.name));
   if (!names.has("payment_method")) await env.DB.prepare("ALTER TABLE appointments ADD COLUMN payment_method TEXT NOT NULL DEFAULT ''").run();
   if (!names.has("paid_at")) await env.DB.prepare("ALTER TABLE appointments ADD COLUMN paid_at INTEGER").run();
+  if (!names.has("no_show")) await env.DB.prepare("ALTER TABLE appointments ADD COLUMN no_show INTEGER NOT NULL DEFAULT 0").run();
 }
 
 export async function GET(request: Request) {
@@ -69,12 +70,12 @@ export async function GET(request: Request) {
   const result = date
     ? await env.DB.prepare(
         `SELECT id, customer_name AS customerName, phone, barber, service, date, time, status,
-          payment_method AS paymentMethod
+          payment_method AS paymentMethod, no_show AS noShow
          FROM appointments WHERE tenant_id = ? AND date = ? ORDER BY time`,
       ).bind(access.tenantId, date).all()
     : await env.DB.prepare(
         `SELECT id, customer_name AS customerName, phone, barber, service, date, time, status,
-          payment_method AS paymentMethod
+          payment_method AS paymentMethod, no_show AS noShow
          FROM appointments
          WHERE tenant_id = ? AND date >= date('now', '-60 days')
          ORDER BY date, time LIMIT 2000`,
@@ -117,6 +118,15 @@ export async function POST(request: Request) {
   if (requestedStatus !== "confirmed") {
     if (!agendaAccess || !ALLOWED_STATUSES.has(requestedStatus)) {
       return Response.json({ error: "Status não autorizado" }, { status: 403 });
+    }
+  }
+  if (requestedStatus === "confirmed") {
+    const blockedClient = await env.DB.prepare(
+      `SELECT blocked_reason AS blockedReason FROM clients
+       WHERE tenant_id = ? AND blocked = 1 AND (phone = ? OR (? != '' AND cpf = ?)) LIMIT 1`,
+    ).bind(requestedTenant, body.phone.trim(), cpf, cpf).first<{ blockedReason: string }>().catch(() => null);
+    if (blockedClient) {
+      return Response.json({ error: blockedClient.blockedReason || "Este cliente precisa falar com o estabelecimento antes de agendar" }, { status: 403 });
     }
   }
   const activeTenant = await env.DB.prepare("SELECT id FROM tenants WHERE id = ? AND active = 1 LIMIT 1")
@@ -312,6 +322,7 @@ export async function PATCH(request: Request) {
     time?: string;
     barber?: string;
     paymentMethod?: string;
+    noShow?: boolean;
   };
   const access = await getTenantAccess(body.tenant, "agenda");
   if (!access) return Response.json({ error: "Acesso restrito a esta barbearia" }, { status: 403 });
@@ -386,11 +397,11 @@ export async function PATCH(request: Request) {
 
   try {
     await env.DB.prepare(
-      `UPDATE appointments SET barber = ?, date = ?, time = ?, status = ?,
+      `UPDATE appointments SET barber = ?, date = ?, time = ?, status = ?, no_show = ?,
         payment_method = CASE WHEN ? = 'completed' THEN ? ELSE payment_method END,
         paid_at = CASE WHEN ? = 'completed' THEN ? ELSE paid_at END
        WHERE id = ? AND tenant_id = ?`,
-    ).bind(nextBarber, nextDate, nextTime, nextStatus, nextStatus, paymentMethod,
+    ).bind(nextBarber, nextDate, nextTime, nextStatus, body.noShow ? 1 : 0, nextStatus, paymentMethod,
       nextStatus, Date.now(), body.id, access.tenantId).run();
     return Response.json({ ok: true });
   } catch {

@@ -372,4 +372,25 @@ test("records in-person payment methods and supports daily cash closing", async 
   assert.match(migration, /ALTER TABLE appointments ADD COLUMN payment_method/);
 });
 
+test("ships complete client profiles with no-show and retention controls", async () => {
+  const [page, clients, appointments, schema, migration] = await Promise.all([
+    source("app/page.tsx"),
+    source("app/api/clients/route.ts"),
+    source("app/api/appointments/route.ts"),
+    source("db/schema.ts"),
+    source("drizzle/0024_client_profiles.sql"),
+  ]);
+  assert.match(page, /Alergias ou cuidados/);
+  assert.match(page, /INATIVO HÁ MAIS DE 60 DIAS/);
+  assert.match(page, /Bloquear novos agendamentos/);
+  assert.match(page, /Convidar para retornar/);
+  assert.match(clients, /isValidCpf/);
+  assert.match(clients, /noShows/);
+  assert.match(clients, /date\('now', '-60 days'\)/);
+  assert.match(appointments, /blockedClient/);
+  assert.match(appointments, /no_show/);
+  assert.match(schema, /blockedReason/);
+  assert.match(migration, /clients_tenant_cpf_unique/);
+});
+
 

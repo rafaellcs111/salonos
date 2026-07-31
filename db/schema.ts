@@ -29,6 +29,7 @@ export const appointments = sqliteTable("appointments", {
   status: text("status").notNull().default("confirmed"),
   paymentMethod: text("payment_method").notNull().default(""),
   paidAt: integer("paid_at"),
+  noShow: integer("no_show", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => [
   uniqueIndex("appointments_slot_unique").on(table.tenantId, table.barber, table.date, table.time),
@@ -48,12 +49,20 @@ export const clients = sqliteTable("clients", {
   tenantId: text("tenant_id").notNull(),
   name: text("name").notNull(),
   phone: text("phone").notNull(),
+  cpf: text("cpf").notNull().default(""),
+  birthDate: text("birth_date").notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  preferences: text("preferences").notNull().default(""),
+  allergies: text("allergies").notNull().default(""),
+  blocked: integer("blocked", { mode: "boolean" }).notNull().default(false),
+  blockedReason: text("blocked_reason").notNull().default(""),
   isMonthly: integer("is_monthly", { mode: "boolean" }).notNull().default(false),
   recurringWeekday: integer("recurring_weekday"),
   recurringTime: text("recurring_time").notNull().default(""),
   recurringBarber: text("recurring_barber").notNull().default(""),
   recurringService: text("recurring_service").notNull().default(""),
   createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at"),
 }, (table) => [
   uniqueIndex("clients_tenant_phone_unique").on(table.tenantId, table.phone),
 ]);

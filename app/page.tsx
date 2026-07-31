@@ -83,6 +83,7 @@ type Appointment = {
   time: string;
   status: "confirmed" | "waiting" | "completed" | "cancelled" | "blocked";
   paymentMethod?: PaymentMethod | "";
+  noShow?: boolean;
 };
 
 type PaymentMethod = "cash" | "pix" | "debit" | "credit";
@@ -103,6 +104,15 @@ type ClientSummary = {
   recurringTime: string;
   recurringBarber: string;
   recurringService: string;
+  cpf: string;
+  birthDate: string;
+  notes: string;
+  preferences: string;
+  allergies: string;
+  blocked: number;
+  blockedReason: string;
+  noShows: number;
+  inactive: number;
 };
 
 type TenantSummary = {
@@ -523,7 +533,7 @@ function AttendanceConfirmation({ tenantId, config }: { tenantId: string; config
     const response = await fetch("/api/appointments", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenant: tenantId, id: current.id, status, paymentMethod: status === "completed" ? paymentMethod : undefined }),
+      body: JSON.stringify({ tenant: tenantId, id: current.id, status, noShow: status === "cancelled", paymentMethod: status === "completed" ? paymentMethod : undefined }),
     });
     setSaving(false);
     if (response.ok) setPending((items) => items.slice(1));
@@ -1212,6 +1222,11 @@ function ClientsContent({ tenantId, config, quickAction, onActionHandled }: {
         tenant: tenantId,
         name: form.get("name"),
         phone: form.get("phone"),
+        cpf: form.get("cpf"),
+        birthDate: form.get("birthDate"),
+        notes: form.get("notes"),
+        preferences: form.get("preferences"),
+        allergies: form.get("allergies"),
         isMonthly: creatingMonthly,
         recurringWeekday: creatingMonthly ? Number(form.get("recurringWeekday")) : null,
         recurringTime: creatingMonthly ? form.get("recurringTime") : "",
@@ -1260,54 +1275,71 @@ function ClientsContent({ tenantId, config, quickAction, onActionHandled }: {
 
   const visibleClients = clients.filter((client) => {
     const term = search.trim().toLowerCase();
-    return !term || client.name.toLowerCase().includes(term) || client.phone.includes(term);
+    return !term || client.name.toLowerCase().includes(term) || client.phone.includes(term) || client.cpf?.includes(term.replace(/\D/g, ""));
   });
   const totalVisits = clients.reduce((sum, client) => sum + Number(client.completed || 0), 0);
   const totalRevenue = clients.reduce((sum, client) => sum + Number(client.totalSpent || 0), 0);
   const monthlyClients = clients.filter((client) => Boolean(client.isMonthly)).length;
+  const inactiveClients = clients.filter((client) => Boolean(client.inactive)).length;
 
   return <div className="clients-page">
     <div className="settings-intro clients-intro">
       <div><span className="section-kicker">RELACIONAMENTO</span><h2>Clientes</h2><p>Perfis criados automaticamente a partir dos agendamentos.</p></div>
-      <div className="clients-actions"><label className="client-search"><span>⌕</span><input aria-label="Buscar clientes" placeholder="Buscar por nome ou telefone" value={search} onChange={(event) => setSearch(event.target.value)} /></label><button className="gold-button compact" onClick={() => setCreating(true)}>+ Novo cliente</button></div>
+      <div className="clients-actions"><label className="client-search"><span>⌕</span><input aria-label="Buscar clientes" placeholder="Buscar por nome, WhatsApp ou CPF" value={search} onChange={(event) => setSearch(event.target.value)} /></label><button className="gold-button compact" onClick={() => setCreating(true)}>+ Novo cliente</button></div>
     </div>
     <div className="client-metrics">
-      <article><small>CLIENTES</small><strong>{clients.length}</strong><span>{monthlyClients} mensalistas com horário fixo</span></article>
+      <article><small>CLIENTES</small><strong>{clients.length}</strong><span>{monthlyClients} mensalistas · {inactiveClients} inativos</span></article>
       <article><small>VISITAS CONCLUÍDAS</small><strong>{totalVisits}</strong><span>atendimentos registrados</span></article>
       <article><small>RECEITA REGISTRADA</small><strong>{formatMoney(totalRevenue)}</strong><span>em serviços concluídos</span></article>
     </div>
     <section className="panel clients-panel">
       <div className="clients-head"><span>CLIENTE</span><span>CONTATO</span><span>ATENDIMENTOS</span><span>ÚLTIMA VISITA</span><span>VALOR</span><span /></div>
       {visibleClients.map((client) => <button className="client-row" key={client.phone} onClick={() => openClient(client)}>
-        <span className="client identity"><i>{client.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</i><span><strong>{client.name}</strong>{Boolean(client.isMonthly) && <small className="monthly-badge">MENSALISTA · {weekdayLabel(client.recurringWeekday)} {client.recurringTime}</small>}</span></span>
+        <span className="client identity"><i>{client.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</i><span><strong>{client.name}</strong>{Boolean(client.isMonthly) && <small className="monthly-badge">MENSALISTA · {weekdayLabel(client.recurringWeekday)} {client.recurringTime}</small>}{Boolean(client.inactive) && <small className="inactive-badge">INATIVO HÁ MAIS DE 60 DIAS</small>}{Boolean(client.blocked) && <small className="blocked-badge">AGENDAMENTO BLOQUEADO</small>}</span></span>
         <span>{client.phone}</span><span>{client.appointments}</span><span>{formatBookingDate(client.lastVisit)}</span><b>{formatMoney(client.totalSpent)}</b><i>→</i>
       </button>)}
       {!visibleClients.length && <div className="agenda-empty">{search ? "Nenhum cliente encontrado." : notice}</div>}
     </section>
-    {selected && <ClientHistory client={selected} history={history} onClose={() => setSelected(null)} onStopMonthly={() => stopMonthly(selected)} />}
+    {selected && <ClientHistory tenantId={tenantId} client={selected} history={history} onClose={() => setSelected(null)} onSaved={async () => { setSelected(null); await loadClients(); }} onStopMonthly={() => stopMonthly(selected)} />}
     {creating && <div className="appointment-overlay" role="dialog" aria-modal="true" aria-label="Novo cliente"><form className="tenant-form panel quick-client-form" onSubmit={createClient}>
       <header><div><span className="section-kicker">CLIENTES</span><h2>Novo cliente</h2><p>Cadastre o contato para encontrá-lo rapidamente.</p></div><button type="button" className="editor-close" onClick={() => setCreating(false)}>×</button></header>
-      <div className="editor-fields"><label>Nome completo<input name="name" required minLength={2} autoFocus placeholder="Nome do cliente" /></label><label>WhatsApp<input name="phone" required minLength={8} placeholder="(00) 0 0000-0000" /></label><label className="monthly-toggle"><input type="checkbox" checked={creatingMonthly} onChange={(event) => setCreatingMonthly(event.target.checked)} /><span><strong>Cliente mensalista</strong><small>Reserva o mesmo horário toda semana por 6 meses.</small></span></label>{creatingMonthly && <><label>Dia fixo<select name="recurringWeekday" required defaultValue="2"><option value="0">Domingo</option><option value="1">Segunda-feira</option><option value="2">Terça-feira</option><option value="3">Quarta-feira</option><option value="4">Quinta-feira</option><option value="5">Sexta-feira</option><option value="6">Sábado</option></select></label><label>Horário fixo<input name="recurringTime" type="time" required /></label><label>Profissional<select name="recurringBarber" required>{config.barbers.filter(isServiceProfessional).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Serviço<select name="recurringService" required>{config.services.filter((item) => item.active).map((item) => <option key={item.name}>{item.name}</option>)}</select></label></>}</div>
+      <div className="editor-fields"><label>Nome completo<input name="name" required minLength={2} autoFocus placeholder="Nome do cliente" /></label><label>WhatsApp<input name="phone" required minLength={8} placeholder="(00) 0 0000-0000" /></label><label>CPF<input name="cpf" inputMode="numeric" maxLength={14} placeholder="000.000.000-00" /></label><label>Aniversário<input name="birthDate" type="date" /></label><label>Preferências<input name="preferences" placeholder="Ex.: corte baixo, profissional preferido" /></label><label>Alergias ou cuidados<input name="allergies" placeholder="Ex.: alergia a determinado produto" /></label><label className="client-notes-field">Observações<textarea name="notes" maxLength={1000} placeholder="Informações importantes sobre o cliente" /></label><label className="monthly-toggle"><input type="checkbox" checked={creatingMonthly} onChange={(event) => setCreatingMonthly(event.target.checked)} /><span><strong>Cliente mensalista</strong><small>Reserva o mesmo horário toda semana por 6 meses.</small></span></label>{creatingMonthly && <><label>Dia fixo<select name="recurringWeekday" required defaultValue="2"><option value="0">Domingo</option><option value="1">Segunda-feira</option><option value="2">Terça-feira</option><option value="3">Quarta-feira</option><option value="4">Quinta-feira</option><option value="5">Sexta-feira</option><option value="6">Sábado</option></select></label><label>Horário fixo<input name="recurringTime" type="time" step="3600" required /></label><label>Profissional<select name="recurringBarber" required>{config.barbers.filter(isServiceProfessional).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Serviço<select name="recurringService" required>{config.services.filter((item) => item.active).map((item) => <option key={item.name}>{item.name}</option>)}</select></label></>}</div>
       <div className="editor-actions"><button type="button" className="outline-button" onClick={() => setCreating(false)}>Cancelar</button><button className="gold-button compact" type="submit">Salvar cliente</button></div>
     </form></div>}
   </div>;
 }
 
-function ClientHistory({ client, history, onClose, onStopMonthly }: {
+function ClientHistory({ tenantId, client, history, onClose, onSaved, onStopMonthly }: {
+  tenantId: string;
   client: ClientSummary;
   history: (Appointment & { price: number })[];
   onClose: () => void;
+  onSaved: () => void;
   onStopMonthly: () => void;
 }) {
   const labels: Record<string, string> = { confirmed: "Confirmado", waiting: "Aguardando", completed: "Concluído", cancelled: "Cancelado" };
+  const [profile, setProfile] = useState({ name: client.name, cpf: client.cpf || "", birthDate: client.birthDate || "", notes: client.notes || "", preferences: client.preferences || "", allergies: client.allergies || "", blocked: Boolean(client.blocked), blockedReason: client.blockedReason || "" });
+  const [saving, setSaving] = useState(false);
+  const [profileNotice, setProfileNotice] = useState("");
+  async function saveProfile() {
+    setSaving(true);
+    const response = await fetch("/api/clients", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenant: tenantId, phone: client.phone, action: "update-profile", ...profile }) });
+    const data = await response.json().catch(() => null);
+    setSaving(false);
+    if (!response.ok) { setProfileNotice(data?.error || "Não foi possível salvar o perfil."); return; }
+    onSaved();
+  }
   return <div className="appointment-overlay" role="dialog" aria-modal="true" aria-label="Histórico do cliente">
     <section className="client-history panel">
       <header><div className="history-person"><span className="avatar">{client.name[0]}</span><div><span className="section-kicker">HISTÓRICO DO CLIENTE</span><h2>{client.name}</h2><p>{client.phone} · cliente desde {formatBookingDate(client.firstVisit)}</p></div></div><button className="editor-close" onClick={onClose} aria-label="Fechar">×</button></header>
       {Boolean(client.isMonthly) && <div className="monthly-summary"><span><small>HORÁRIO FIXO SEMANAL</small><strong>{weekdayLabel(client.recurringWeekday)} às {client.recurringTime}</strong><em>{client.recurringService} com {client.recurringBarber}</em></span><button className="danger-button" onClick={onStopMonthly}>Encerrar recorrência</button></div>}
-      <div className="history-summary"><span><small>ATENDIMENTOS</small><strong>{client.appointments}</strong></span><span><small>CONCLUÍDOS</small><strong>{client.completed}</strong></span><span><small>VALOR TOTAL</small><strong>{formatMoney(client.totalSpent)}</strong></span></div>
+      <div className="history-summary"><span><small>ATENDIMENTOS</small><strong>{client.appointments}</strong></span><span><small>CONCLUÍDOS</small><strong>{client.completed}</strong></span><span><small>FALTAS</small><strong>{client.noShows || 0}</strong></span><span><small>VALOR TOTAL</small><strong>{formatMoney(client.totalSpent)}</strong></span></div>
+      <div className="client-profile-fields"><label>Nome<input value={profile.name} onChange={(event) => setProfile({ ...profile, name: event.target.value })} /></label><label>CPF<input value={profile.cpf} maxLength={14} onChange={(event) => setProfile({ ...profile, cpf: event.target.value })} placeholder="000.000.000-00" /></label><label>Aniversário<input type="date" value={profile.birthDate} onChange={(event) => setProfile({ ...profile, birthDate: event.target.value })} /></label><label>Preferências<input value={profile.preferences} onChange={(event) => setProfile({ ...profile, preferences: event.target.value })} /></label><label>Alergias ou cuidados<input value={profile.allergies} onChange={(event) => setProfile({ ...profile, allergies: event.target.value })} /></label><label className="wide">Observações<textarea value={profile.notes} maxLength={1000} onChange={(event) => setProfile({ ...profile, notes: event.target.value })} /></label><label className="wide client-block-toggle"><input type="checkbox" checked={profile.blocked} onChange={(event) => setProfile({ ...profile, blocked: event.target.checked })} /><span><strong>Bloquear novos agendamentos</strong><small>Use apenas para faltas recorrentes ou quando o responsável precisar falar com o cliente.</small></span></label>{profile.blocked && <label className="wide">Motivo do bloqueio<input value={profile.blockedReason} onChange={(event) => setProfile({ ...profile, blockedReason: event.target.value })} placeholder="Mensagem que será exibida ao tentar agendar" /></label>}</div>
+      <div className="client-profile-actions">{profileNotice && <span>{profileNotice}</span>}<button className="gold-button compact" disabled={saving} onClick={saveProfile}>{saving ? "Salvando..." : "Salvar perfil"}</button></div>
+      <div className="whatsapp-actions client-relationship-actions"><span><MessageCircle aria-hidden="true" /><strong>Relacionamento</strong><small>Mensagens prontas para revisão antes do envio pelo WhatsApp.</small></span><div><a href={whatsappUrl(client.phone, `Olá, ${client.name}! Sentimos sua falta. Que tal reservar seu próximo horário?`)} target="_blank" rel="noreferrer">Convidar para retornar</a>{client.birthDate && <a href={whatsappUrl(client.phone, `Feliz aniversário, ${client.name}! Desejamos um ótimo dia e esperamos receber você novamente em breve.`)} target="_blank" rel="noreferrer">Mensagem de aniversário</a>}</div></div>
       <div className="history-list">{history.map((item) => <div className="history-row" key={item.id}>
         <span><strong>{formatBookingDate(item.date)} · {item.time}</strong><small>{item.service} com {item.barber}</small></span>
-        <b>{formatMoney(item.price || 0)}</b><i className={`status ${item.status === "waiting" ? "waiting" : ""}`}>{labels[item.status]}</i>
+        <b>{formatMoney(item.price || 0)}</b><i className={`status ${item.status === "waiting" ? "waiting" : ""}`}>{item.noShow ? "Faltou" : labels[item.status]}</i>
       </div>)}
       {!history.length && <div className="agenda-empty">Carregando histórico...</div>}</div>
     </section>

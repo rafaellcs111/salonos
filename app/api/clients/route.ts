@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { getTenantAccess } from "../../tenant-access";
+import { isValidCpf, normalizeCpf } from "../../lib/cpf";
 
 async function ensureTables() {
   await env.DB.batch([
@@ -39,6 +40,22 @@ async function ensureTables() {
     )`),
     env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS clients_tenant_phone_unique ON clients (tenant_id, phone)"),
   ]);
+  const clientColumns = await env.DB.prepare("PRAGMA table_info(clients)").all<{ name: string }>();
+  const names = new Set(clientColumns.results.map((column) => column.name));
+  const additions = [
+    ["cpf", "TEXT NOT NULL DEFAULT ''"], ["birth_date", "TEXT NOT NULL DEFAULT ''"],
+    ["notes", "TEXT NOT NULL DEFAULT ''"], ["preferences", "TEXT NOT NULL DEFAULT ''"],
+    ["allergies", "TEXT NOT NULL DEFAULT ''"], ["blocked", "INTEGER NOT NULL DEFAULT 0"],
+    ["blocked_reason", "TEXT NOT NULL DEFAULT ''"], ["updated_at", "INTEGER"],
+  ];
+  for (const [column, definition] of additions) {
+    if (!names.has(column)) await env.DB.prepare(`ALTER TABLE clients ADD COLUMN ${column} ${definition}`).run();
+  }
+  const appointmentColumns = await env.DB.prepare("PRAGMA table_info(appointments)").all<{ name: string }>();
+  if (!appointmentColumns.results.some((column) => column.name === "no_show")) {
+    await env.DB.prepare("ALTER TABLE appointments ADD COLUMN no_show INTEGER NOT NULL DEFAULT 0").run();
+  }
+  await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS clients_tenant_cpf_unique ON clients (tenant_id, cpf) WHERE cpf != ''").run();
 }
 
 export async function GET(request: Request) {
@@ -50,7 +67,7 @@ export async function GET(request: Request) {
   const phone = url.searchParams.get("phone")?.trim();
   if (phone) {
     const history = await env.DB.prepare(
-      `SELECT id, customer_name AS customerName, phone, barber, service, date, time, status,
+      `SELECT id, customer_name AS customerName, phone, barber, service, date, time, status, no_show AS noShow,
         COALESCE((SELECT price FROM services s
           WHERE s.tenant_id = appointments.tenant_id AND s.name = appointments.service
           ORDER BY s.id DESC LIMIT 1), 0) AS price
@@ -66,7 +83,7 @@ export async function GET(request: Request) {
       SELECT phone FROM clients WHERE tenant_id = ?
       UNION
       SELECT phone FROM appointments
-      WHERE tenant_id = ? AND phone != '-' AND status != 'cancelled'
+      WHERE tenant_id = ? AND phone != '-' AND (status != 'cancelled' OR no_show = 1)
     )
     SELECT client_phones.phone,
       COALESCE(
@@ -78,23 +95,35 @@ export async function GET(request: Request) {
       COALESCE((SELECT recurring_time FROM clients c WHERE c.tenant_id = ? AND c.phone = client_phones.phone LIMIT 1), '') AS recurringTime,
       COALESCE((SELECT recurring_barber FROM clients c WHERE c.tenant_id = ? AND c.phone = client_phones.phone LIMIT 1), '') AS recurringBarber,
       COALESCE((SELECT recurring_service FROM clients c WHERE c.tenant_id = ? AND c.phone = client_phones.phone LIMIT 1), '') AS recurringService,
+      COALESCE((SELECT cpf FROM clients c WHERE c.tenant_id = ? AND c.phone = client_phones.phone LIMIT 1),
+        (SELECT cpf FROM appointments a WHERE a.tenant_id = ? AND a.phone = client_phones.phone AND cpf != '' ORDER BY id DESC LIMIT 1), '') AS cpf,
+      COALESCE((SELECT birth_date FROM clients c WHERE c.tenant_id = ? AND c.phone = client_phones.phone LIMIT 1), '') AS birthDate,
+      COALESCE((SELECT notes FROM clients c WHERE c.tenant_id = ? AND c.phone = client_phones.phone LIMIT 1), '') AS notes,
+      COALESCE((SELECT preferences FROM clients c WHERE c.tenant_id = ? AND c.phone = client_phones.phone LIMIT 1), '') AS preferences,
+      COALESCE((SELECT allergies FROM clients c WHERE c.tenant_id = ? AND c.phone = client_phones.phone LIMIT 1), '') AS allergies,
+      COALESCE((SELECT blocked FROM clients c WHERE c.tenant_id = ? AND c.phone = client_phones.phone LIMIT 1), 0) AS blocked,
+      COALESCE((SELECT blocked_reason FROM clients c WHERE c.tenant_id = ? AND c.phone = client_phones.phone LIMIT 1), '') AS blockedReason,
       COUNT(appointments.id) AS appointments,
       SUM(CASE WHEN appointments.status = 'completed' THEN 1 ELSE 0 END) AS completed,
+      SUM(CASE WHEN appointments.no_show = 1 THEN 1 ELSE 0 END) AS noShows,
       MAX(appointments.date) AS lastVisit,
       COALESCE(MIN(appointments.date), date('now')) AS firstVisit,
+      CASE WHEN MAX(appointments.date) IS NOT NULL AND MAX(appointments.date) < date('now', '-60 days') THEN 1 ELSE 0 END AS inactive,
       ROUND(SUM(CASE WHEN appointments.status = 'completed' THEN COALESCE(
         (SELECT price FROM services s
          WHERE s.tenant_id = appointments.tenant_id AND s.name = appointments.service
          ORDER BY s.id DESC LIMIT 1), 0) ELSE 0 END), 2) AS totalSpent
      FROM client_phones
      LEFT JOIN appointments ON appointments.tenant_id = ? AND appointments.phone = client_phones.phone
-       AND appointments.status != 'cancelled'
+       AND (appointments.status != 'cancelled' OR appointments.no_show = 1)
      GROUP BY client_phones.phone
      ORDER BY isMonthly DESC, lastVisit DESC, name`,
   ).bind(
     access.tenantId, access.tenantId,
     access.tenantId, access.tenantId, access.tenantId, access.tenantId,
     access.tenantId, access.tenantId, access.tenantId,
+    access.tenantId, access.tenantId, access.tenantId, access.tenantId,
+    access.tenantId, access.tenantId, access.tenantId, access.tenantId,
   ).all();
   return Response.json({ clients: clients.results });
 }
@@ -104,6 +133,11 @@ export async function POST(request: Request) {
     tenant?: string;
     name?: string;
     phone?: string;
+    cpf?: string;
+    birthDate?: string;
+    notes?: string;
+    preferences?: string;
+    allergies?: string;
     isMonthly?: boolean;
     recurringWeekday?: number;
     recurringTime?: string;
@@ -115,6 +149,8 @@ export async function POST(request: Request) {
   await ensureTables();
   const name = String(body.name || "").trim().slice(0, 100);
   const phone = String(body.phone || "").trim().slice(0, 30);
+  const cpf = body.cpf ? normalizeCpf(body.cpf) : "";
+  const birthDate = String(body.birthDate || "").slice(0, 10);
   if (name.length < 2 || phone.replace(/\D/g, "").length < 8) {
     return Response.json({ error: "Informe o nome e um telefone válido" }, { status: 400 });
   }
@@ -130,6 +166,8 @@ export async function POST(request: Request) {
   if (isMonthly && (!Number.isInteger(weekday) || weekday < 0 || weekday > 6 || !/^\d{2}:\d{2}$/.test(time) || !barber || !service)) {
     return Response.json({ error: "Defina dia, horário, profissional e serviço do mensalista" }, { status: 400 });
   }
+  if (cpf && !isValidCpf(cpf)) return Response.json({ error: "Informe um CPF válido" }, { status: 400 });
+  if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) return Response.json({ error: "Data de nascimento inválida" }, { status: 400 });
   if (isMonthly && !time.endsWith(":00")) {
     return Response.json({ error: "Escolha um horário cheio, como 09:00, 10:00 ou 11:00" }, { status: 400 });
   }
@@ -168,21 +206,34 @@ export async function POST(request: Request) {
     }
   }
 
-  await env.DB.prepare(
+  try {
+    await env.DB.prepare(
     `INSERT INTO clients
-      (tenant_id, name, phone, is_monthly, recurring_weekday, recurring_time, recurring_barber, recurring_service, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (tenant_id, name, phone, cpf, birth_date, notes, preferences, allergies,
+       is_monthly, recurring_weekday, recurring_time, recurring_barber, recurring_service, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(tenant_id, phone) DO UPDATE SET
        name = excluded.name,
+       cpf = excluded.cpf,
+       birth_date = excluded.birth_date,
+       notes = excluded.notes,
+       preferences = excluded.preferences,
+       allergies = excluded.allergies,
        is_monthly = excluded.is_monthly,
        recurring_weekday = excluded.recurring_weekday,
        recurring_time = excluded.recurring_time,
        recurring_barber = excluded.recurring_barber,
-       recurring_service = excluded.recurring_service`,
+       recurring_service = excluded.recurring_service,
+       updated_at = excluded.updated_at`,
   ).bind(
-    access.tenantId, name, phone, isMonthly ? 1 : 0, isMonthly ? weekday : null,
-    isMonthly ? time : "", isMonthly ? barber : "", isMonthly ? service : "", Date.now(),
-  ).run();
+    access.tenantId, name, phone, cpf, birthDate,
+    String(body.notes || "").trim().slice(0, 1000), String(body.preferences || "").trim().slice(0, 500),
+    String(body.allergies || "").trim().slice(0, 500), isMonthly ? 1 : 0, isMonthly ? weekday : null,
+    isMonthly ? time : "", isMonthly ? barber : "", isMonthly ? service : "", Date.now(), Date.now(),
+    ).run();
+  } catch {
+    return Response.json({ error: "Este CPF já está vinculado a outro cliente" }, { status: 409 });
+  }
 
   if (!isMonthly) return Response.json({ ok: true, recurringCreated: 0 }, { status: 201 });
 
@@ -234,13 +285,44 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const body = await request.json() as { tenant?: string; phone?: string; action?: string };
+  const body = await request.json() as {
+    tenant?: string; phone?: string; action?: string; name?: string; cpf?: string;
+    birthDate?: string; notes?: string; preferences?: string; allergies?: string;
+    blocked?: boolean; blockedReason?: string;
+  };
   const access = await getTenantAccess(body.tenant, "clients");
-  const agendaAccess = await getTenantAccess(body.tenant, "agenda");
-  if (!access || !agendaAccess) {
-    return Response.json({ error: "Acesso a clientes e agenda é necessário" }, { status: 403 });
+  if (!access) return Response.json({ error: "Acesso a clientes é necessário" }, { status: 403 });
+  await ensureTables();
+  if (!body.phone) return Response.json({ error: "Cliente não informado" }, { status: 400 });
+
+  if (body.action === "update-profile") {
+    const cpf = body.cpf ? normalizeCpf(body.cpf) : "";
+    if (cpf && !isValidCpf(cpf)) return Response.json({ error: "Informe um CPF válido" }, { status: 400 });
+    const birthDate = String(body.birthDate || "").slice(0, 10);
+    if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) return Response.json({ error: "Data de nascimento inválida" }, { status: 400 });
+    try {
+      await env.DB.prepare(`INSERT INTO clients
+        (tenant_id, name, phone, cpf, birth_date, notes, preferences, allergies, blocked, blocked_reason, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(tenant_id, phone) DO UPDATE SET name = excluded.name, cpf = excluded.cpf,
+          birth_date = excluded.birth_date, notes = excluded.notes, preferences = excluded.preferences,
+          allergies = excluded.allergies, blocked = excluded.blocked,
+          blocked_reason = excluded.blocked_reason, updated_at = excluded.updated_at`).bind(
+        access.tenantId, String(body.name || "").trim().slice(0, 100), body.phone, cpf, birthDate,
+        String(body.notes || "").trim().slice(0, 1000), String(body.preferences || "").trim().slice(0, 500),
+        String(body.allergies || "").trim().slice(0, 500), body.blocked ? 1 : 0,
+        body.blocked ? String(body.blockedReason || "").trim().slice(0, 300) : "",
+        Date.now(), Date.now(),
+      ).run();
+      return Response.json({ ok: true });
+    } catch {
+      return Response.json({ error: "Este CPF já está vinculado a outro cliente" }, { status: 409 });
+    }
   }
-  if (body.action !== "stop-monthly" || !body.phone) {
+
+  const agendaAccess = await getTenantAccess(body.tenant, "agenda");
+  if (!agendaAccess) return Response.json({ error: "Acesso à agenda é necessário" }, { status: 403 });
+  if (body.action !== "stop-monthly") {
     return Response.json({ error: "Atualização inválida" }, { status: 400 });
   }
   const client = await env.DB.prepare(
