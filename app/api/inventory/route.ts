@@ -3,7 +3,7 @@ import { getTenantAccess } from "../../tenant-access";
 
 async function requireInventory(request: Request) {
   const tenant = new URL(request.url).searchParams.get("tenant");
-  const access = await getTenantAccess(tenant, "settings");
+  const access = await getTenantAccess(tenant, "inventory");
   return access && access.plan !== "starter" ? access : null;
 }
 

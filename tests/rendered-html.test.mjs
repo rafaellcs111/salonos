@@ -303,4 +303,34 @@ test("refreshes operational data automatically and restores the authenticated wo
   assert.match(page, /setView\(authenticatedView\)/);
 });
 
+test("always restores the authenticated dashboard after a page reload", async () => {
+  const page = await source("app/page.tsx");
+  assert.match(page, /setView\(authenticatedView\)/);
+  assert.match(page, /sessionResolved/);
+  assert.match(page, /\.finally\(\(\) => setSessionResolved\(true\)\)/);
+  assert.doesNotMatch(page, /if \(savedNav && allowedNav\.includes\(savedNav\)\) setActiveNav\(savedNav\);\s+setView\(authenticatedView\);/);
+});
+
+test("gives each establishment a cashier profile while keeping finance owner-only", async () => {
+  const [page, access, config, staffAccess, storefront, notifications] = await Promise.all([
+    source("app/page.tsx"),
+    source("app/tenant-access.ts"),
+    source("app/api/config/route.ts"),
+    source("app/api/auth/manage-user/route.ts"),
+    source("app/api/storefront/[slug]/route.ts"),
+    source("app/api/notifications/route.ts"),
+  ]);
+  assert.match(page, /Adicionar caixa/);
+  assert.match(page, /Financeiro · somente proprietário/);
+  assert.match(page, /playBellSound/);
+  assert.match(page, /items\.length > 99 \? "99\+"/);
+  assert.match(access, /finance: false/);
+  assert.match(config, /Somente o proprietário pode alterar equipe e permissões/);
+  assert.match(config, /finance: false/);
+  assert.match(staffAccess, /Somente o proprietário pode liberar acessos/);
+  assert.match(storefront, /lower\(role\) != 'caixa'/);
+  assert.match(notifications, /Notificações disponíveis somente para o proprietário/);
+  assert.match(notifications, /quantity <= minimum_stock/);
+});
+
 

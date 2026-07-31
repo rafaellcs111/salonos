@@ -41,7 +41,7 @@ export async function GET(request: Request) {
       .bind(access.tenantId, month).all(),
     env.DB.prepare(`SELECT work_days AS workDays, work_start AS workStart, work_end AS workEnd,
       break_start AS breakStart, break_end AS breakEnd FROM barbers
-      WHERE tenant_id = ? AND active = 1`).bind(access.tenantId).all(),
+      WHERE tenant_id = ? AND active = 1 AND lower(role) != 'caixa'`).bind(access.tenantId).all(),
     env.DB.prepare("SELECT AVG(duration) AS duration FROM services WHERE tenant_id = ? AND active = 1")
       .bind(access.tenantId).first<{ duration: number }>(),
   ]);

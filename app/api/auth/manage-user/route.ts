@@ -23,6 +23,7 @@ export async function POST(request: Request) {
   }
   const access = await getTenantAccess(body.tenant, "settings");
   if (!access) return Response.json({ error: "Acesso restrito ao gestor" }, { status: 403 });
+  if (access.role === "staff") return Response.json({ error: "Somente o proprietário pode liberar acessos" }, { status: 403 });
   const email = String(body.email || "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return Response.json({ error: "Informe um e-mail válido para o profissional" }, { status: 400 });
@@ -66,6 +67,7 @@ export async function DELETE(request: Request) {
   const body = await request.json() as { tenant?: string; email?: string };
   const access = await getTenantAccess(body.tenant, "settings");
   if (!access) return Response.json({ error: "Acesso restrito ao gestor" }, { status: 403 });
+  if (access.role === "staff") return Response.json({ error: "Somente o proprietário pode bloquear acessos" }, { status: 403 });
   const email = String(body.email || "").trim().toLowerCase();
   const professional = await env.DB.prepare(
     "SELECT id FROM barbers WHERE tenant_id = ? AND lower(email) = lower(?) LIMIT 1",

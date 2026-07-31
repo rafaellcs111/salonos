@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getBarberOSOwner, getChatGPTUser, type ChatGPTUser } from "./chatgpt-auth";
 
-export type TenantPermission = "agenda" | "clients" | "finance" | "settings";
+export type TenantPermission = "agenda" | "clients" | "inventory" | "finance" | "settings";
 export type TenantPermissions = Record<TenantPermission, boolean>;
 
 export type TenantAccess = {
@@ -119,7 +119,7 @@ export async function getTenantAccess(
 }
 
 function fullPermissions(): TenantPermissions {
-  return { agenda: true, clients: true, finance: true, settings: true };
+  return { agenda: true, clients: true, inventory: true, finance: true, settings: true };
 }
 
 function parsePermissions(value: string): TenantPermissions {
@@ -128,10 +128,11 @@ function parsePermissions(value: string): TenantPermissions {
     return {
       agenda: Boolean(parsed.agenda),
       clients: Boolean(parsed.clients),
-      finance: Boolean(parsed.finance),
-      settings: Boolean(parsed.settings),
+      inventory: Boolean(parsed.inventory),
+      finance: false,
+      settings: false,
     };
   } catch {
-    return { agenda: false, clients: false, finance: false, settings: false };
+    return { agenda: false, clients: false, inventory: false, finance: false, settings: false };
   }
 }
