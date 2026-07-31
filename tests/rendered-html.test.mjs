@@ -351,4 +351,25 @@ test("uses fixed hourly slots, confirms completed visits and prepares WhatsApp d
   assert.match(whatsapp, /appointment_confirmation/);
 });
 
+test("records in-person payment methods and supports daily cash closing", async () => {
+  const [page, appointments, inventory, finance, closing, schema, migration] = await Promise.all([
+    source("app/page.tsx"),
+    source("app/api/appointments/route.ts"),
+    source("app/api/inventory/route.ts"),
+    source("app/api/finance/route.ts"),
+    source("app/api/cash-closing/route.ts"),
+    source("db/schema.ts"),
+    source("drizzle/0023_cash_closing_and_payments.sql"),
+  ]);
+  assert.match(page, /Apenas registro/);
+  assert.match(page, /Fechamento diário/);
+  assert.match(page, /SOMENTE REGISTRO · SEM COBRANÇA/);
+  assert.match(appointments, /Informe como o cliente pagou/);
+  assert.match(inventory, /payment_method/);
+  assert.match(finance, /paymentMethods/);
+  assert.match(closing, /cash_closings/);
+  assert.match(schema, /export const cashClosings/);
+  assert.match(migration, /ALTER TABLE appointments ADD COLUMN payment_method/);
+});
+
 

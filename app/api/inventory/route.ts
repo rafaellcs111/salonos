@@ -1,6 +1,8 @@
 import { env } from "cloudflare:workers";
 import { getTenantAccess } from "../../tenant-access";
 
+const PAYMENT_METHODS = new Set(["cash", "pix", "debit", "credit"]);
+
 async function requireInventory(request: Request) {
   const tenant = new URL(request.url).searchParams.get("tenant");
   const access = await getTenantAccess(tenant, "inventory");
@@ -37,12 +39,15 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const access = await requireInventory(request);
   if (!access) return Response.json({ error: "Estoque disponível nos planos Pro e Premium" }, { status: 403 });
-  const body = await request.json() as { id?: number; delta?: number; action?: string; quantity?: number };
+  const body = await request.json() as { id?: number; delta?: number; action?: string; quantity?: number; paymentMethod?: string };
 
   if (body.action === "sell") {
     const quantity = Math.floor(Number(body.quantity));
     if (!body.id || !Number.isFinite(quantity) || quantity < 1) {
       return Response.json({ error: "Informe uma quantidade válida" }, { status: 400 });
+    }
+    if (!body.paymentMethod || !PAYMENT_METHODS.has(body.paymentMethod)) {
+      return Response.json({ error: "Informe como o cliente pagou" }, { status: 400 });
     }
     const product = await env.DB.prepare(
       "SELECT id, name, quantity, sale_price AS salePrice FROM inventory_products WHERE id = ? AND tenant_id = ? LIMIT 1",
@@ -60,10 +65,10 @@ export async function PATCH(request: Request) {
     const saleDate = saoPauloDate();
     const results = await env.DB.batch([
       env.DB.prepare(`INSERT INTO inventory_sales
-        (sale_token, tenant_id, product_id, product_name, quantity, unit_price, total_amount, sale_date, sold_at, sold_by)
-        SELECT ?, tenant_id, id, name, ?, sale_price, sale_price * ?, ?, ?, ?
+        (sale_token, tenant_id, product_id, product_name, quantity, unit_price, total_amount, sale_date, sold_at, sold_by, payment_method)
+        SELECT ?, tenant_id, id, name, ?, sale_price, sale_price * ?, ?, ?, ?, ?
         FROM inventory_products WHERE id = ? AND tenant_id = ? AND quantity >= ?`)
-        .bind(saleToken, quantity, quantity, saleDate, now, access.user.email, body.id, access.tenantId, quantity),
+        .bind(saleToken, quantity, quantity, saleDate, now, access.user.email, body.paymentMethod, body.id, access.tenantId, quantity),
       env.DB.prepare(`UPDATE inventory_products SET quantity = quantity - ?, updated_at = ?
         WHERE id = ? AND tenant_id = ?
           AND EXISTS (SELECT 1 FROM inventory_sales WHERE sale_token = ?)`)

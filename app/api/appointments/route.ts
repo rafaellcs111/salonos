@@ -10,6 +10,7 @@ import { queueAppointmentConfirmation } from "../../whatsapp";
 
 const TENANT = "chosen";
 const ALLOWED_STATUSES = new Set(["confirmed", "waiting", "completed", "cancelled", "blocked"]);
+const PAYMENT_METHODS = new Set(["cash", "pix", "debit", "credit"]);
 
 async function ensureAppointmentsTable() {
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS appointments (
@@ -27,6 +28,10 @@ async function ensureAppointmentsTable() {
     created_at INTEGER NOT NULL,
     UNIQUE(tenant_id, barber, date, time)
   )`).run();
+  const columns = await env.DB.prepare("PRAGMA table_info(appointments)").all<{ name: string }>();
+  const names = new Set(columns.results.map((column) => column.name));
+  if (!names.has("payment_method")) await env.DB.prepare("ALTER TABLE appointments ADD COLUMN payment_method TEXT NOT NULL DEFAULT ''").run();
+  if (!names.has("paid_at")) await env.DB.prepare("ALTER TABLE appointments ADD COLUMN paid_at INTEGER").run();
 }
 
 export async function GET(request: Request) {
@@ -63,11 +68,13 @@ export async function GET(request: Request) {
 
   const result = date
     ? await env.DB.prepare(
-        `SELECT id, customer_name AS customerName, phone, barber, service, date, time, status
+        `SELECT id, customer_name AS customerName, phone, barber, service, date, time, status,
+          payment_method AS paymentMethod
          FROM appointments WHERE tenant_id = ? AND date = ? ORDER BY time`,
       ).bind(access.tenantId, date).all()
     : await env.DB.prepare(
-        `SELECT id, customer_name AS customerName, phone, barber, service, date, time, status
+        `SELECT id, customer_name AS customerName, phone, barber, service, date, time, status,
+          payment_method AS paymentMethod
          FROM appointments
          WHERE tenant_id = ? AND date >= date('now', '-60 days')
          ORDER BY date, time LIMIT 2000`,
@@ -304,11 +311,15 @@ export async function PATCH(request: Request) {
     date?: string;
     time?: string;
     barber?: string;
+    paymentMethod?: string;
   };
   const access = await getTenantAccess(body.tenant, "agenda");
   if (!access) return Response.json({ error: "Acesso restrito a esta barbearia" }, { status: 403 });
   if (!body.id || (body.status && !ALLOWED_STATUSES.has(body.status))) {
     return Response.json({ error: "Atualização inválida" }, { status: 400 });
+  }
+  if (body.paymentMethod && !PAYMENT_METHODS.has(body.paymentMethod)) {
+    return Response.json({ error: "Forma de pagamento inválida" }, { status: 400 });
   }
   if (body.date && !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
     return Response.json({ error: "Data inválida" }, { status: 400 });
@@ -331,6 +342,10 @@ export async function PATCH(request: Request) {
   const nextDate = body.date || String(current.date);
   const nextTime = body.time || String(current.time);
   const nextStatus = body.status || String(current.status);
+  const paymentMethod = body.paymentMethod || "";
+  if (nextStatus === "completed" && !PAYMENT_METHODS.has(paymentMethod)) {
+    return Response.json({ error: "Informe como o cliente pagou" }, { status: 400 });
+  }
   const scheduleChanged = Boolean(body.date || body.time || body.barber);
 
   if (nextStatus !== "cancelled" && scheduleChanged) {
@@ -371,9 +386,12 @@ export async function PATCH(request: Request) {
 
   try {
     await env.DB.prepare(
-      `UPDATE appointments SET barber = ?, date = ?, time = ?, status = ?
+      `UPDATE appointments SET barber = ?, date = ?, time = ?, status = ?,
+        payment_method = CASE WHEN ? = 'completed' THEN ? ELSE payment_method END,
+        paid_at = CASE WHEN ? = 'completed' THEN ? ELSE paid_at END
        WHERE id = ? AND tenant_id = ?`,
-    ).bind(nextBarber, nextDate, nextTime, nextStatus, body.id, access.tenantId).run();
+    ).bind(nextBarber, nextDate, nextTime, nextStatus, nextStatus, paymentMethod,
+      nextStatus, Date.now(), body.id, access.tenantId).run();
     return Response.json({ ok: true });
   } catch {
     return Response.json({ error: "Este horário já está ocupado" }, { status: 409 });

@@ -82,6 +82,12 @@ type Appointment = {
   date: string;
   time: string;
   status: "confirmed" | "waiting" | "completed" | "cancelled" | "blocked";
+  paymentMethod?: PaymentMethod | "";
+};
+
+type PaymentMethod = "cash" | "pix" | "debit" | "credit";
+const paymentMethodLabels: Record<PaymentMethod, string> = {
+  cash: "Dinheiro", pix: "PIX", debit: "Cartão de débito", credit: "Cartão de crédito",
 };
 
 type ClientSummary = {
@@ -485,6 +491,7 @@ export default function Home() {
 function AttendanceConfirmation({ tenantId, config }: { tenantId: string; config: BusinessConfig }) {
   const [pending, setPending] = useState<Appointment[]>([]);
   const [saving, setSaving] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
   const current = pending[0];
 
   function loadPending() {
@@ -516,7 +523,7 @@ function AttendanceConfirmation({ tenantId, config }: { tenantId: string; config
     const response = await fetch("/api/appointments", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenant: tenantId, id: current.id, status }),
+      body: JSON.stringify({ tenant: tenantId, id: current.id, status, paymentMethod: status === "completed" ? paymentMethod : undefined }),
     });
     setSaving(false);
     if (response.ok) setPending((items) => items.slice(1));
@@ -536,6 +543,7 @@ function AttendanceConfirmation({ tenantId, config }: { tenantId: string; config
     <section className="tenant-form panel attendance-confirmation">
       <header><div><span className="section-kicker">CONFIRMAR ATENDIMENTO</span><h2>{current.customerName} compareceu?</h2><p>O horário das {current.time} já passou. Confirme o resultado para atualizar o financeiro corretamente.</p></div></header>
       <div className="booking-summary"><span><small>SERVIÇO</small><strong>{current.service}</strong></span><span><small>PROFISSIONAL</small><strong>{current.barber}</strong></span></div>
+      <label className="payment-method-field">Como o cliente pagou?<select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}>{Object.entries(paymentMethodLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>Apenas registro. O SalonOS não processa o pagamento.</small></label>
       <div className="editor-actions">
         <button type="button" className="outline-button" disabled={saving} onClick={decideLater}>Decidir depois</button>
         <button type="button" className="danger-button" disabled={saving} onClick={() => answer("cancelled")}>Cliente não veio</button>
@@ -1319,7 +1327,8 @@ function FinanceContent({ tenantId }: { tenantId: string }) {
   const [data, setData] = useState<{
     summary: { completedAppointments: number; productSales: number; productItems: number; serviceRevenue: number; productRevenue: number; revenue: number; averageTicket: number; commissions: number; netAfterCommissions: number };
     barbers: { barber: string; appointments: number; revenue: number; commissionRate: number; commission: number }[];
-    transactions: { id: number; type: "service" | "product"; customerName: string; barber: string; service: string; date: string; time: string; quantity: number; amount: number }[];
+    transactions: { id: number; type: "service" | "product"; customerName: string; barber: string; service: string; date: string; time: string; quantity: number; amount: number; paymentMethod: PaymentMethod | "" }[];
+    paymentMethods: Record<string, number>;
   } | null>(null);
   const [notice, setNotice] = useState("Carregando resultados...");
 
@@ -1352,8 +1361,10 @@ function FinanceContent({ tenantId }: { tenantId: string }) {
   return <div className="finance-page">
     <div className="settings-intro finance-intro">
       <div><span className="section-kicker">GESTÃO FINANCEIRA</span><h2>Financeiro</h2><p>Serviços concluídos e vendas de produtos no mesmo resultado.</p></div>
-      <div className="finance-controls"><span className="no-payments">SEM PAGAMENTOS NA PLATAFORMA</span><input aria-label="Selecionar mês" type="month" value={period} onChange={(event) => setPeriod(event.target.value)} /></div>
+      <div className="finance-controls"><span className="no-payments">SOMENTE REGISTRO · SEM COBRANÇA</span><input aria-label="Selecionar mês" type="month" value={period} onChange={(event) => setPeriod(event.target.value)} /></div>
     </div>
+    {data && <div className="payment-summary">{Object.entries(paymentMethodLabels).map(([method, label]) => <article key={method}><small>{label}</small><strong>{formatMoney(data.paymentMethods?.[method] || 0)}</strong></article>)}</div>}
+    <CashClosing tenantId={tenantId} onClosed={() => loadFinance(true)} />
     <div className="finance-metrics">
       <article><small>FATURAMENTO REALIZADO</small><strong>{formatMoney(summary.revenue)}</strong><span>{formatMoney(summary.serviceRevenue)} serviços · {formatMoney(summary.productRevenue)} produtos</span></article>
       <article><small>TICKET MÉDIO</small><strong>{formatMoney(summary.averageTicket)}</strong><span>{summary.completedAppointments} serviços · {summary.productSales} vendas</span></article>
@@ -1371,12 +1382,49 @@ function FinanceContent({ tenantId }: { tenantId: string }) {
       </section>
       <section className="panel finance-records"><header><div><h2>Lançamentos contabilizados</h2><p>Serviços e produtos, sem cobrança online</p></div></header>
         <div className="finance-head"><span>DATA</span><span>ORIGEM</span><span>ITEM</span><span>VALOR</span></div>
-        {data.transactions.map((item) => <div className="finance-row" key={`${item.type}-${item.id}`}><span>{formatBookingDate(item.date)} · {item.time}</span><span><strong>{item.type === "product" ? "Venda de produto" : item.customerName}</strong><small>{item.type === "product" ? `${item.quantity} unidade(s)` : item.barber}</small></span><span>{item.service}</span><b>{formatMoney(item.amount)}</b></div>)}
+        {data.transactions.map((item) => <div className="finance-row" key={`${item.type}-${item.id}`}><span>{formatBookingDate(item.date)} · {item.time}</span><span><strong>{item.type === "product" ? "Venda de produto" : item.customerName}</strong><small>{item.type === "product" ? `${item.quantity} unidade(s)` : item.barber}</small></span><span>{item.service}<small>{paymentMethodLabels[item.paymentMethod as PaymentMethod] || "Não informado"}</small></span><b>{formatMoney(item.amount)}</b></div>)}
         {!data.transactions.length && <div className="agenda-empty">Sem lançamentos neste mês.</div>}
       </section>
     </div>}
     <p className="finance-disclaimer">Os valores consideram serviços concluídos e produtos marcados como vendidos. O SalonOS não recebe, processa nem transfere pagamentos.</p>
   </div>;
+}
+
+function CashClosing({ tenantId, onClosed }: { tenantId: string; onClosed: () => void }) {
+  const today = toLocalISODate(new Date());
+  const [data, setData] = useState<{ expectedTotal: number; totals: Record<PaymentMethod, number>; closing: { closedAt: number; closedBy: string; notes: string } | null } | null>(null);
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  function load() {
+    return fetch(`/api/cash-closing?tenant=${encodeURIComponent(tenantId)}&date=${today}`)
+      .then((response) => response.ok ? response.json() : null)
+      .then((result) => { setData(result); if (result?.closing?.notes) setNotes(result.closing.notes); })
+      .catch(() => setData(null));
+  }
+  useEffect(() => { load(); }, [tenantId, today]);
+
+  async function closeCash() {
+    setSaving(true);
+    setNotice("Fechando caixa...");
+    const response = await fetch("/api/cash-closing", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tenant: tenantId, date: today, notes }),
+    });
+    setSaving(false);
+    if (!response.ok) { setNotice("Não foi possível fechar o caixa."); return; }
+    setNotice("Caixa fechado com sucesso.");
+    await load();
+    onClosed();
+  }
+
+  if (!data) return null;
+  return <section className="panel cash-closing"><header><div><span className="section-kicker">CAIXA DE HOJE</span><h2>Fechamento diário</h2><p>Confira os recebimentos registrados pela equipe.</p></div><strong>{formatMoney(data.expectedTotal / 100)}</strong></header>
+    <div className="cash-methods">{Object.entries(paymentMethodLabels).map(([method, label]) => <span key={method}><small>{label}</small><b>{formatMoney(Number(data.totals[method as PaymentMethod] || 0) / 100)}</b></span>)}</div>
+    <label>Observações<textarea value={notes} maxLength={500} onChange={(event) => setNotes(event.target.value)} placeholder="Ex.: diferença conferida, retirada de dinheiro..." /></label>
+    <footer><span>{data.closing ? `Fechado por ${data.closing.closedBy}` : "Ainda não fechado"}{notice ? ` · ${notice}` : ""}</span><button className="gold-button compact" disabled={saving} onClick={closeCash}>{saving ? "Fechando..." : data.closing ? "Atualizar fechamento" : "Fechar caixa de hoje"}</button></footer>
+  </section>;
 }
 
 function AgendaContent({ tenantId, config, quickAction, onActionHandled }: {
@@ -1519,6 +1567,7 @@ function DashboardContent({ mini = false, config = defaultConfig, tenantId = "ch
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [checkinNotice, setCheckinNotice] = useState("");
+  const [checkinPaymentMethod, setCheckinPaymentMethod] = useState<PaymentMethod>("pix");
   const [dashboardData, setDashboardData] = useState<{
     metrics: {
       todayAppointments: number;
@@ -1595,7 +1644,7 @@ function DashboardContent({ mini = false, config = defaultConfig, tenantId = "ch
     const response = await fetch("/api/appointments", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: appointment.id, tenant: tenantId, status: "completed" }),
+      body: JSON.stringify({ id: appointment.id, tenant: tenantId, status: "completed", paymentMethod: checkinPaymentMethod }),
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) {
@@ -1636,6 +1685,7 @@ function DashboardContent({ mini = false, config = defaultConfig, tenantId = "ch
       {!mini && <section className="panel quick-actions"><h2>Ações rápidas</h2><div>{permissions.agenda && <button onClick={() => onQuickAction?.("appointment")}>+ Agendamento</button>}{permissions.clients && <button onClick={() => onQuickAction?.("client")}>♙ Novo cliente</button>}{permissions.agenda && <button onClick={() => onQuickAction?.("blocked")}>▦ Bloquear horário</button>}{permissions.agenda && <button onClick={() => { setCheckinNotice(""); setCheckinOpen(true); }}>↗ Registrar entrada</button>}</div></section>}
       {checkinOpen && <div className="appointment-overlay" role="dialog" aria-modal="true" aria-label="Registrar entrada"><section className="client-history panel quick-checkin">
         <header><div><span className="section-kicker">ATENDIMENTOS DE HOJE</span><h2>Registrar entrada</h2><p>Conclua o atendimento para lançá-lo automaticamente no financeiro.</p></div><button className="editor-close" onClick={() => setCheckinOpen(false)} aria-label="Fechar">×</button></header>
+        <label className="payment-method-field">Como o cliente pagou?<select value={checkinPaymentMethod} onChange={(event) => setCheckinPaymentMethod(event.target.value as PaymentMethod)}>{Object.entries(paymentMethodLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>Apenas registro; não há cobrança pelo SalonOS.</small></label>
         <div className="quick-checkin-list">{pendingToday.map((item) => <button key={item.id} onClick={() => completeQuickAppointment(item)}><span><strong>{item.time} · {item.customerName}</strong><small>{item.service} com {item.barber}</small></span><b>Concluir →</b></button>)}{!pendingToday.length && <div className="agenda-empty">Nenhum atendimento pendente para hoje.</div>}</div>
         {checkinNotice && <p className="agenda-page-notice">{checkinNotice}</p>}
       </section></div>}
@@ -1720,6 +1770,7 @@ function AppointmentEditor({ appointment, tenantId, barbers, onClose, onUpdated 
   const [time, setTime] = useState(appointment.time);
   const [barber, setBarber] = useState(appointment.barber);
   const [status, setStatus] = useState(appointment.status);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(appointment.paymentMethod || "pix");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const confirmationMessage = `Olá, ${appointment.customerName}! Seu horário para ${appointment.service} está confirmado para ${formatBookingDate(date)} às ${time}, com ${barber}. Se precisar alterar, responda esta mensagem.`;
@@ -1731,7 +1782,7 @@ function AppointmentEditor({ appointment, tenantId, barbers, onClose, onUpdated 
     const response = await fetch("/api/appointments", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: appointment.id, tenant: tenantId, date, time, barber, status: nextStatus }),
+      body: JSON.stringify({ id: appointment.id, tenant: tenantId, date, time, barber, status: nextStatus, paymentMethod: nextStatus === "completed" ? paymentMethod : undefined }),
     });
     setSaving(false);
     if (response.ok) {
@@ -1760,6 +1811,7 @@ function AppointmentEditor({ appointment, tenantId, barbers, onClose, onUpdated 
       <option value="cancelled">Cancelado</option>
       <option value="blocked">Bloqueado</option>
         </select></label>
+        {status === "completed" && <label>Forma de pagamento<select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}>{Object.entries(paymentMethodLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>}
       </div>
       {notice && <p className="editor-error">{notice}</p>}
       {appointment.status !== "blocked" && <div className="whatsapp-actions">
@@ -2288,6 +2340,7 @@ function InventoryContent({ tenantId }: { tenantId: string }) {
   const [notice, setNotice] = useState("Carregando estoque...");
   const [selling, setSelling] = useState<Product | null>(null);
   const [saleQuantity, setSaleQuantity] = useState(1);
+  const [salePaymentMethod, setSalePaymentMethod] = useState<PaymentMethod>("pix");
   const [sellingNow, setSellingNow] = useState(false);
   const load = () => fetch(`/api/inventory?tenant=${encodeURIComponent(tenantId)}`).then(async (r) => {
     const data = await r.json(); if (!r.ok) throw new Error(data.error); setProducts(data.products || []); setNotice("");
@@ -2313,7 +2366,7 @@ function InventoryContent({ tenantId }: { tenantId: string }) {
     const response = await fetch(`/api/inventory?tenant=${encodeURIComponent(tenantId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: selling.id, action: "sell", quantity: saleQuantity }),
+      body: JSON.stringify({ id: selling.id, action: "sell", quantity: saleQuantity, paymentMethod: salePaymentMethod }),
     });
     const data = await response.json().catch(() => null);
     setSellingNow(false);
@@ -2340,7 +2393,7 @@ function InventoryContent({ tenantId }: { tenantId: string }) {
     <section className="panel inventory-list"><div className="inventory-head"><span>PRODUTO</span><span>QUANTIDADE</span><span>MÍNIMO</span><span>CUSTO</span><span>VENDA</span><span>AÇÕES</span></div>{inventorySections.map(([section, sectionProducts]) => <div className="inventory-section" key={section}><h3>{section}<small>{sectionProducts.length} {sectionProducts.length === 1 ? "produto" : "produtos"}</small></h3>{sectionProducts.map((p) => <div className={`inventory-row ${p.quantity <= p.minimumStock ? "low" : ""}`} key={p.id}><span><strong>{p.name}</strong><small>{p.category || "Sem seção"}</small></span><span className="stock-adjust"><button type="button" onClick={() => adjust(p.id, -1)}>−</button><b>{p.quantity}</b><button type="button" onClick={() => adjust(p.id, 1)}>+</button></span><b>{p.minimumStock}</b><span>{formatMoney(p.cost / 100)}</span><span>{formatMoney(p.salePrice / 100)}</span><span className="inventory-actions"><button className="sell-button" type="button" disabled={p.quantity < 1 || p.salePrice < 1} onClick={() => { setSelling(p); setSaleQuantity(1); }}>Marcar vendido</button><button className="owner-delete" type="button" onClick={() => remove(p)}>Excluir</button></span></div>)}</div>)}{!products.length && <div className="agenda-empty">{notice || "Nenhum produto cadastrado."}</div>}</section>
     {selling && <div className="appointment-overlay" role="dialog" aria-modal="true" aria-label="Registrar venda de produto"><form className="tenant-form panel inventory-sale-modal" onSubmit={sellProduct}>
       <header><div><span className="section-kicker">VENDA DE PRODUTO</span><h2>{selling.name}</h2><p>A baixa no estoque e o lançamento financeiro acontecem juntos.</p></div><button type="button" className="editor-close" onClick={() => setSelling(null)}>×</button></header>
-      <div className="editor-fields"><label>Quantidade<input type="number" min="1" max={selling.quantity} value={saleQuantity} onChange={(event) => setSaleQuantity(Math.max(1, Number(event.target.value) || 1))} required autoFocus /></label><label>Valor da venda<input value={formatMoney(selling.salePrice * saleQuantity / 100)} disabled /></label></div>
+      <div className="editor-fields"><label>Quantidade<input type="number" min="1" max={selling.quantity} value={saleQuantity} onChange={(event) => setSaleQuantity(Math.max(1, Number(event.target.value) || 1))} required autoFocus /></label><label>Valor da venda<input value={formatMoney(selling.salePrice * saleQuantity / 100)} disabled /></label><label>Forma de pagamento<select value={salePaymentMethod} onChange={(event) => setSalePaymentMethod(event.target.value as PaymentMethod)}>{Object.entries(paymentMethodLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label></div>
       <div className="sale-stock-info">Disponível no estoque: <strong>{selling.quantity}</strong></div>
       <div className="editor-actions"><button type="button" className="outline-button" onClick={() => setSelling(null)}>Cancelar</button><button className="gold-button compact" type="submit" disabled={sellingNow}>{sellingNow ? "Registrando..." : "Confirmar venda"}</button></div>
     </form></div>}

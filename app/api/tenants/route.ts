@@ -189,6 +189,13 @@ export async function DELETE(request: Request) {
     status TEXT NOT NULL DEFAULT 'waiting_configuration',
     created_at INTEGER NOT NULL, sent_at INTEGER
   )`).run();
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS cash_closings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id TEXT NOT NULL, closing_date TEXT NOT NULL,
+    expected_total INTEGER NOT NULL, cash_total INTEGER NOT NULL DEFAULT 0,
+    pix_total INTEGER NOT NULL DEFAULT 0, debit_total INTEGER NOT NULL DEFAULT 0,
+    credit_total INTEGER NOT NULL DEFAULT 0, notes TEXT NOT NULL DEFAULT '',
+    closed_by TEXT NOT NULL, closed_at INTEGER NOT NULL, UNIQUE(tenant_id, closing_date)
+  )`).run();
   await env.DB.batch([
     env.DB.prepare("DELETE FROM appointments WHERE tenant_id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM clients WHERE tenant_id = ?").bind(body.id),
@@ -198,6 +205,7 @@ export async function DELETE(request: Request) {
     env.DB.prepare("DELETE FROM inventory_products WHERE tenant_id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM inventory_sales WHERE tenant_id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM whatsapp_outbox WHERE tenant_id = ?").bind(body.id),
+    env.DB.prepare("DELETE FROM cash_closings WHERE tenant_id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM tenants WHERE id = ?").bind(body.id),
   ]);
   const media = (env as unknown as { MEDIA: R2Bucket }).MEDIA;

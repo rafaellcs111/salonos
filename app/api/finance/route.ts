@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     ).bind(access.tenantId, period).all(),
     env.DB.prepare(
       `SELECT id, 'service' AS type, customer_name AS customerName, barber, service,
-        date, time, 1 AS quantity,
+        date, time, 1 AS quantity, payment_method AS paymentMethod,
         COALESCE((SELECT price FROM services s
           WHERE s.tenant_id = appointments.tenant_id AND s.name = appointments.service
           ORDER BY s.id DESC LIMIT 1), 0) AS amount
@@ -52,7 +52,7 @@ export async function GET(request: Request) {
       `SELECT id, 'product' AS type, 'Venda de produto' AS customerName, sold_by AS barber,
         product_name AS service, sale_date AS date,
         strftime('%H:%M', sold_at / 1000, 'unixepoch', '-3 hours') AS time,
-        quantity, total_amount / 100.0 AS amount
+        quantity, total_amount / 100.0 AS amount, payment_method AS paymentMethod
        FROM inventory_sales
        WHERE tenant_id = ? AND substr(sale_date, 1, 7) = ?`,
     ).bind(access.tenantId, period).all(),
@@ -73,6 +73,11 @@ export async function GET(request: Request) {
     .slice(0, 150);
   const transactionCount = completedAppointments + productSales;
   const grossRevenue = serviceRevenue + productRevenue;
+  const paymentMethods = transactions.reduce<Record<string, number>>((totals, item) => {
+    const method = String(item.paymentMethod || "unregistered");
+    totals[method] = (totals[method] || 0) + Number(item.amount || 0);
+    return totals;
+  }, {});
 
   return Response.json({
     summary: {
@@ -88,6 +93,7 @@ export async function GET(request: Request) {
     },
     barbers,
     transactions,
+    paymentMethods,
     paymentProcessing: false,
   });
 }

@@ -27,6 +27,8 @@ export const appointments = sqliteTable("appointments", {
   date: text("date").notNull(),
   time: text("time").notNull(),
   status: text("status").notNull().default("confirmed"),
+  paymentMethod: text("payment_method").notNull().default(""),
+  paidAt: integer("paid_at"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => [
   uniqueIndex("appointments_slot_unique").on(table.tenantId, table.barber, table.date, table.time),
@@ -149,7 +151,24 @@ export const inventorySales = sqliteTable("inventory_sales", {
   saleDate: text("sale_date").notNull(),
   soldAt: integer("sold_at").notNull(),
   soldBy: text("sold_by").notNull().default(""),
+  paymentMethod: text("payment_method").notNull().default(""),
 });
+
+export const cashClosings = sqliteTable("cash_closings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tenantId: text("tenant_id").notNull(),
+  closingDate: text("closing_date").notNull(),
+  expectedTotal: integer("expected_total").notNull(),
+  cashTotal: integer("cash_total").notNull().default(0),
+  pixTotal: integer("pix_total").notNull().default(0),
+  debitTotal: integer("debit_total").notNull().default(0),
+  creditTotal: integer("credit_total").notNull().default(0),
+  notes: text("notes").notNull().default(""),
+  closedBy: text("closed_by").notNull(),
+  closedAt: integer("closed_at").notNull(),
+}, (table) => [
+  uniqueIndex("cash_closings_tenant_date_unique").on(table.tenantId, table.closingDate),
+]);
 
 export const whatsappOutbox = sqliteTable("whatsapp_outbox", {
   id: integer("id").primaryKey({ autoIncrement: true }),
