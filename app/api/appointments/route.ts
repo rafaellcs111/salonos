@@ -6,6 +6,7 @@ import {
   rateLimitResponse,
   requestClientAddress,
 } from "../../security";
+import { queueAppointmentConfirmation } from "../../whatsapp";
 
 const TENANT = "chosen";
 const ALLOWED_STATUSES = new Set(["confirmed", "waiting", "completed", "cancelled", "blocked"]);
@@ -76,6 +77,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const body = await request.json() as Record<string, string>;
+  const requestedStatus = body.status || "confirmed";
+  const isBlocked = requestedStatus === "blocked";
   const required = ["customerName", "phone", "barber", "service", "date", "time"];
   if (required.some((field) => !body[field])) {
     return Response.json({ error: "Dados incompletos" }, { status: 400 });
@@ -83,7 +86,10 @@ export async function POST(request: Request) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(body.date) || !/^\d{2}:\d{2}$/.test(body.time)) {
     return Response.json({ error: "Data ou horário inválido" }, { status: 400 });
   }
-  if (!body.customerName.trim() || body.phone.replace(/\D/g, "").length < 8) {
+  if (!body.time.endsWith(":00")) {
+    return Response.json({ error: "Escolha um horário cheio, como 09:00, 10:00 ou 11:00" }, { status: 400 });
+  }
+  if (!isBlocked && (!body.customerName.trim() || body.phone.replace(/\D/g, "").length < 8)) {
     return Response.json({ error: "Informe um nome e WhatsApp válidos" }, { status: 400 });
   }
   const { date: today, minutes: currentMinutes } = getCurrentSaoPauloTime();
@@ -95,7 +101,6 @@ export async function POST(request: Request) {
   }
   await ensureAppointmentsTable();
   const requestedTenant = body.tenant || TENANT;
-  const requestedStatus = body.status || "confirmed";
   const agendaAccess = await getTenantAccess(requestedTenant, "agenda");
   const isPublicBooking = requestedStatus === "confirmed" && !agendaAccess;
   if (isPublicBooking && !isValidCpf(body.cpf)) {
@@ -145,6 +150,17 @@ export async function POST(request: Request) {
         Date.now(),
       )
       .run();
+    if (requestedStatus === "confirmed") {
+      await queueAppointmentConfirmation({
+        tenantId: requestedTenant,
+        phone: body.phone,
+        customerName: body.customerName.trim().slice(0, 100),
+        barber: body.barber.trim().slice(0, 100),
+        service: body.service.trim().slice(0, 100),
+        date: body.date,
+        time: body.time,
+      }).catch(() => undefined);
+    }
     return Response.json({ ok: true }, { status: 201 });
   } catch {
     const cancelled = await env.DB.prepare(
@@ -174,6 +190,17 @@ export async function POST(request: Request) {
           Date.now(),
         ),
     ]);
+    if (requestedStatus === "confirmed") {
+      await queueAppointmentConfirmation({
+        tenantId: requestedTenant,
+        phone: body.phone,
+        customerName: body.customerName.trim().slice(0, 100),
+        barber: body.barber.trim().slice(0, 100),
+        service: body.service.trim().slice(0, 100),
+        date: body.date,
+        time: body.time,
+      }).catch(() => undefined);
+    }
     return Response.json({ ok: true }, { status: 201 });
   }
 }
@@ -288,6 +315,9 @@ export async function PATCH(request: Request) {
   }
   if (body.time && !/^\d{2}:\d{2}$/.test(body.time)) {
     return Response.json({ error: "Horário inválido" }, { status: 400 });
+  }
+  if (body.time && !body.time.endsWith(":00")) {
+    return Response.json({ error: "Escolha um horário cheio, como 09:00, 10:00 ou 11:00" }, { status: 400 });
   }
   await ensureAppointmentsTable();
   const currentResult = await env.DB.prepare(

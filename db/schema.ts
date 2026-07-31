@@ -151,3 +151,14 @@ export const inventorySales = sqliteTable("inventory_sales", {
   soldBy: text("sold_by").notNull().default(""),
 });
 
+export const whatsappOutbox = sqliteTable("whatsapp_outbox", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tenantId: text("tenant_id").notNull(),
+  event: text("event").notNull(),
+  recipient: text("recipient").notNull(),
+  payload: text("payload").notNull(),
+  status: text("status").notNull().default("waiting_configuration"),
+  createdAt: integer("created_at").notNull(),
+  sentAt: integer("sent_at"),
+});
+

@@ -183,6 +183,12 @@ export async function DELETE(request: Request) {
     id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
     phone TEXT NOT NULL, created_at INTEGER NOT NULL
   )`).run();
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS whatsapp_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id TEXT NOT NULL, event TEXT NOT NULL,
+    recipient TEXT NOT NULL, payload TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'waiting_configuration',
+    created_at INTEGER NOT NULL, sent_at INTEGER
+  )`).run();
   await env.DB.batch([
     env.DB.prepare("DELETE FROM appointments WHERE tenant_id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM clients WHERE tenant_id = ?").bind(body.id),
@@ -191,6 +197,7 @@ export async function DELETE(request: Request) {
     env.DB.prepare("DELETE FROM business_hours WHERE tenant_id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM inventory_products WHERE tenant_id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM inventory_sales WHERE tenant_id = ?").bind(body.id),
+    env.DB.prepare("DELETE FROM whatsapp_outbox WHERE tenant_id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM tenants WHERE id = ?").bind(body.id),
   ]);
   const media = (env as unknown as { MEDIA: R2Bucket }).MEDIA;

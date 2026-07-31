@@ -478,7 +478,71 @@ export default function Home() {
       </section>
     </main>
     {view === "admin" && mustChangePassword && <PasswordChangeGate onChanged={() => setMustChangePassword(false)} />}
+    {view === "admin" && signedIn && permissions.agenda && <AttendanceConfirmation tenantId={tenantId} config={config} />}
   </>);
+}
+
+function AttendanceConfirmation({ tenantId, config }: { tenantId: string; config: BusinessConfig }) {
+  const [pending, setPending] = useState<Appointment[]>([]);
+  const [saving, setSaving] = useState(false);
+  const current = pending[0];
+
+  function loadPending() {
+    const today = toLocalISODate(new Date());
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    return fetch(`/api/appointments?tenant=${encodeURIComponent(tenantId)}&date=${today}`)
+      .then((response) => response.ok ? response.json() : { appointments: [] })
+      .then((data) => {
+        const dismissed = new Set(JSON.parse(window.sessionStorage.getItem(`salonos:dismissed-attendance:${tenantId}`) || "[]"));
+        setPending((data.appointments || []).filter((item: Appointment) =>
+          (item.status === "confirmed" || item.status === "waiting")
+          && timeToMinutes(item.time) + Number(config.services.find((service) => service.name === item.service)?.duration || 60) <= currentMinutes
+          && !dismissed.has(String(item.id)),
+        ));
+      })
+      .catch(() => undefined);
+  }
+
+  useEffect(() => {
+    loadPending();
+    const timer = window.setInterval(loadPending, 60_000);
+    return () => window.clearInterval(timer);
+  }, [tenantId, config.services]);
+
+  async function answer(status: "completed" | "cancelled") {
+    if (!current) return;
+    setSaving(true);
+    const response = await fetch("/api/appointments", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tenant: tenantId, id: current.id, status }),
+    });
+    setSaving(false);
+    if (response.ok) setPending((items) => items.slice(1));
+  }
+
+  function decideLater() {
+    if (!current) return;
+    const key = `salonos:dismissed-attendance:${tenantId}`;
+    const dismissed = new Set(JSON.parse(window.sessionStorage.getItem(key) || "[]"));
+    dismissed.add(String(current.id));
+    window.sessionStorage.setItem(key, JSON.stringify([...dismissed]));
+    setPending((items) => items.slice(1));
+  }
+
+  if (!current) return null;
+  return <div className="appointment-overlay" role="dialog" aria-modal="true" aria-label="Confirmar atendimento realizado">
+    <section className="tenant-form panel attendance-confirmation">
+      <header><div><span className="section-kicker">CONFIRMAR ATENDIMENTO</span><h2>{current.customerName} compareceu?</h2><p>O horário das {current.time} já passou. Confirme o resultado para atualizar o financeiro corretamente.</p></div></header>
+      <div className="booking-summary"><span><small>SERVIÇO</small><strong>{current.service}</strong></span><span><small>PROFISSIONAL</small><strong>{current.barber}</strong></span></div>
+      <div className="editor-actions">
+        <button type="button" className="outline-button" disabled={saving} onClick={decideLater}>Decidir depois</button>
+        <button type="button" className="danger-button" disabled={saving} onClick={() => answer("cancelled")}>Cliente não veio</button>
+        <button type="button" className="gold-button compact" disabled={saving} onClick={() => answer("completed")}>{saving ? "Salvando..." : "Veio e realizou"}</button>
+      </div>
+    </section>
+  </div>;
 }
 
 function OwnerNotifications({ tenantId, onNavigate }: { tenantId: string; onNavigate: (section: string) => void }) {
@@ -713,14 +777,19 @@ function toLocalISODate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function timeToMinutes(value: string) {
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
 function createTimeSlots(open: string, close: string, duration: number) {
   const [openHour, openMinute] = open.split(":").map(Number);
   const [closeHour, closeMinute] = close.split(":").map(Number);
-  const start = openHour * 60 + openMinute;
+  const rawStart = openHour * 60 + openMinute;
+  const start = Math.ceil(rawStart / 60) * 60;
   const end = closeHour * 60 + closeMinute;
-  const interval = Math.max(15, duration || 30);
   const slots: string[] = [];
-  for (let minute = start; minute + interval <= end; minute += interval) {
+  for (let minute = start; minute + Math.max(1, duration || 30) <= end; minute += 60) {
     slots.push(`${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`);
   }
   return slots;
@@ -1321,6 +1390,8 @@ function AgendaContent({ tenantId, config, quickAction, onActionHandled }: {
   const [notice, setNotice] = useState("Carregando agenda...");
   const [creating, setCreating] = useState(false);
   const [creationKind, setCreationKind] = useState<"appointment" | "blocked">("appointment");
+  const [creationNotice, setCreationNotice] = useState("");
+  const [creatingItem, setCreatingItem] = useState(false);
   const [selected, setSelected] = useState<Appointment | null>(null);
 
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => {
@@ -1348,6 +1419,7 @@ function AgendaContent({ tenantId, config, quickAction, onActionHandled }: {
   useEffect(() => {
     if (quickAction === "appointment" || quickAction === "blocked") {
       setCreationKind(quickAction);
+      setCreationNotice("");
       setCreating(true);
       onActionHandled();
     }
@@ -1363,35 +1435,43 @@ function AgendaContent({ tenantId, config, quickAction, onActionHandled }: {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const blocked = form.get("kind") === "blocked";
-    setNotice(blocked ? "Criando bloqueio..." : "Salvando agendamento...");
-    const response = await fetch("/api/appointments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        tenant: tenantId,
-        customerName: blocked ? "Horário bloqueado" : form.get("customerName"),
-        phone: blocked ? "-" : form.get("phone"),
-        barber: form.get("barber"),
-        service: blocked ? "Bloqueio de agenda" : form.get("service"),
-        date: form.get("date"),
-        time: form.get("time"),
-        status: blocked ? "blocked" : "confirmed",
-      }),
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok) {
-      setNotice(data?.error || "Não foi possível salvar.");
-      return;
+    setCreationNotice(blocked ? "Criando bloqueio..." : "Salvando agendamento...");
+    setCreatingItem(true);
+    try {
+      const response = await fetch("/api/appointments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenant: tenantId,
+          customerName: blocked ? "Horário bloqueado" : form.get("customerName"),
+          phone: blocked ? "-" : form.get("phone"),
+          barber: form.get("barber"),
+          service: blocked ? "Bloqueio de agenda" : form.get("service"),
+          date: form.get("date"),
+          time: form.get("time"),
+          status: blocked ? "blocked" : "confirmed",
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setCreationNotice(data?.error || "Não foi possível salvar o horário.");
+        return;
+      }
+      setCreating(false);
+      setCreationNotice("");
+      await loadWeek();
+    } catch {
+      setCreationNotice("Não foi possível conectar ao servidor. Tente novamente.");
+    } finally {
+      setCreatingItem(false);
     }
-    setCreating(false);
-    await loadWeek();
   }
 
   const weekLabel = `${weekDays[0].toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} — ${weekDays[6].toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}`;
   return <div className="agenda-page">
     <div className="agenda-toolbar">
       <div><span className="section-kicker">AGENDA OPERACIONAL</span><h2>Semana de atendimentos</h2><p>{weekLabel}</p></div>
-      <div className="agenda-controls"><button className="outline-button" onClick={() => moveWeek(-1)}>←</button><button className="outline-button" onClick={() => setWeekStart(startOfWeek(new Date()))}>Hoje</button><button className="outline-button" onClick={() => moveWeek(1)}>→</button><button className="gold-button compact" onClick={() => { setCreationKind("appointment"); setCreating(true); }}>+ Novo horário</button></div>
+      <div className="agenda-controls"><button className="outline-button" onClick={() => moveWeek(-1)}>←</button><button className="outline-button" onClick={() => setWeekStart(startOfWeek(new Date()))}>Hoje</button><button className="outline-button" onClick={() => moveWeek(1)}>→</button><button className="gold-button compact" onClick={() => { setCreationKind("appointment"); setCreationNotice(""); setCreating(true); }}>+ Novo horário</button></div>
     </div>
     {notice && <p className="agenda-page-notice">{notice}</p>}
     <section className="week-board">
@@ -1408,8 +1488,9 @@ function AgendaContent({ tenantId, config, quickAction, onActionHandled }: {
     </section>
     {creating && <div className="appointment-overlay" role="dialog" aria-modal="true" aria-label="Novo horário"><form className="tenant-form panel" onSubmit={createAgendaItem}>
       <header><div><span className="section-kicker">AGENDA</span><h2>Novo horário</h2><p>Agende um cliente ou bloqueie um período.</p></div><button type="button" className="editor-close" onClick={() => setCreating(false)}>×</button></header>
-      <div className="editor-fields"><label>Tipo<select name="kind" value={creationKind} onChange={(event) => setCreationKind(event.target.value as "appointment" | "blocked")}><option value="appointment">Agendamento</option><option value="blocked">Bloqueio de agenda</option></select></label><label>Data<input name="date" type="date" required defaultValue={toLocalISODate(new Date())} /></label><label>Horário<input name="time" type="time" required /></label><label>Profissional<select name="barber" required>{config.barbers.filter(isServiceProfessional).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Serviço<select name="service" required disabled={creationKind === "blocked"}>{config.services.filter((item) => item.active).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Cliente<input name="customerName" required={creationKind === "appointment"} disabled={creationKind === "blocked"} placeholder="Nome completo" /></label><label>WhatsApp<input name="phone" required={creationKind === "appointment"} disabled={creationKind === "blocked"} placeholder="(47) 9 9999-9999" /></label></div>
-      <div className="editor-actions"><button type="button" className="outline-button" onClick={() => setCreating(false)}>Cancelar</button><button className="gold-button compact" type="submit">Salvar horário</button></div>
+      <div className="editor-fields"><label>Tipo<select name="kind" value={creationKind} onChange={(event) => setCreationKind(event.target.value as "appointment" | "blocked")}><option value="appointment">Agendamento</option><option value="blocked">Bloqueio de agenda</option></select></label><label>Data<input name="date" type="date" required defaultValue={toLocalISODate(new Date())} /></label><label>Horário<input name="time" type="time" step="3600" required /></label><label>Profissional<select name="barber" required>{config.barbers.filter(isServiceProfessional).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Serviço<select name="service" required disabled={creationKind === "blocked"}>{config.services.filter((item) => item.active).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Cliente<input name="customerName" required={creationKind === "appointment"} disabled={creationKind === "blocked"} placeholder="Nome completo" /></label><label>WhatsApp<input name="phone" required={creationKind === "appointment"} disabled={creationKind === "blocked"} placeholder="(47) 9 9999-9999" /></label></div>
+      {creationNotice && <p className="editor-error" role="alert">{creationNotice}</p>}
+      <div className="editor-actions"><button type="button" className="outline-button" onClick={() => setCreating(false)}>Cancelar</button><button className="gold-button compact" type="submit" disabled={creatingItem}>{creatingItem ? "Salvando..." : "Salvar horário"}</button></div>
     </form></div>}
     {selected && <AppointmentEditor appointment={selected} tenantId={tenantId} barbers={config.barbers.filter(isServiceProfessional).map((item) => item.name)} onClose={() => setSelected(null)} onUpdated={() => { setSelected(null); loadWeek(); }} />}
   </div>;
@@ -1670,7 +1751,7 @@ function AppointmentEditor({ appointment, tenantId, barbers, onClose, onUpdated 
       <header><div><span className="section-kicker">AGENDA</span><h2>{appointment.customerName}</h2><p>{appointment.service} · {appointment.phone}</p></div><button className="editor-close" onClick={onClose} aria-label="Fechar">×</button></header>
       <div className="editor-fields">
         <label>Data<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
-        <label>Horário<input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></label>
+        <label>Horário<input type="time" step="3600" value={time} onChange={(event) => setTime(event.target.value)} /></label>
         <label>Profissional<select value={barber} onChange={(event) => setBarber(event.target.value)}>{barbers.map((name) => <option key={name}>{name}</option>)}</select></label>
         <label>Status<select value={status} onChange={(event) => setStatus(event.target.value as Appointment["status"])}>
           <option value="confirmed">Confirmado</option>
@@ -2247,11 +2328,16 @@ function InventoryContent({ tenantId }: { tenantId: string }) {
   }
   const low = products.filter((p) => p.quantity <= p.minimumStock).length;
   const value = products.reduce((sum, p) => sum + p.quantity * p.cost, 0);
+  const inventorySections = Object.entries(products.reduce<Record<string, Product[]>>((groups, product) => {
+    const section = product.category.trim() || "Sem seção";
+    (groups[section] ||= []).push(product);
+    return groups;
+  }, {})).sort(([first], [second]) => first.localeCompare(second, "pt-BR"));
   return <div className="inventory-page"><div className="settings-intro"><div><span className="section-kicker">PRODUTOS E INSUMOS</span><h2>Controle de estoque</h2><p>Acompanhe pomadas, shampoos, lâminas e produtos para venda.</p></div></div>
     <div className="inventory-metrics"><article><small>PRODUTOS</small><strong>{products.length}</strong></article><article><small>ESTOQUE BAIXO</small><strong>{low}</strong></article><article><small>VALOR EM ESTOQUE</small><strong>{formatMoney(value / 100)}</strong></article></div>
     <form className="panel inventory-form" onSubmit={add}><input name="name" required placeholder="Nome do produto" /><input name="category" placeholder="Categoria" /><input name="quantity" type="number" min="0" placeholder="Quantidade" /><input name="minimumStock" type="number" min="0" placeholder="Estoque mínimo" /><input name="cost" type="number" min="0" step=".01" placeholder="Custo R$" /><input name="salePrice" type="number" min="0" step=".01" placeholder="Venda R$" /><button className="gold-button compact">Adicionar produto</button></form>
     {notice && <p className="inventory-notice">{notice}</p>}
-    <section className="panel inventory-list"><div className="inventory-head"><span>PRODUTO</span><span>QUANTIDADE</span><span>MÍNIMO</span><span>CUSTO</span><span>VENDA</span><span>AÇÕES</span></div>{products.map((p) => <div className={`inventory-row ${p.quantity <= p.minimumStock ? "low" : ""}`} key={p.id}><span><strong>{p.name}</strong><small>{p.category}</small></span><span className="stock-adjust"><button type="button" onClick={() => adjust(p.id, -1)}>−</button><b>{p.quantity}</b><button type="button" onClick={() => adjust(p.id, 1)}>+</button></span><b>{p.minimumStock}</b><span>{formatMoney(p.cost / 100)}</span><span>{formatMoney(p.salePrice / 100)}</span><span className="inventory-actions"><button className="sell-button" type="button" disabled={p.quantity < 1 || p.salePrice < 1} onClick={() => { setSelling(p); setSaleQuantity(1); }}>Marcar vendido</button><button className="owner-delete" type="button" onClick={() => remove(p)}>Excluir</button></span></div>)}{!products.length && <div className="agenda-empty">{notice || "Nenhum produto cadastrado."}</div>}</section>
+    <section className="panel inventory-list"><div className="inventory-head"><span>PRODUTO</span><span>QUANTIDADE</span><span>MÍNIMO</span><span>CUSTO</span><span>VENDA</span><span>AÇÕES</span></div>{inventorySections.map(([section, sectionProducts]) => <div className="inventory-section" key={section}><h3>{section}<small>{sectionProducts.length} {sectionProducts.length === 1 ? "produto" : "produtos"}</small></h3>{sectionProducts.map((p) => <div className={`inventory-row ${p.quantity <= p.minimumStock ? "low" : ""}`} key={p.id}><span><strong>{p.name}</strong><small>{p.category || "Sem seção"}</small></span><span className="stock-adjust"><button type="button" onClick={() => adjust(p.id, -1)}>−</button><b>{p.quantity}</b><button type="button" onClick={() => adjust(p.id, 1)}>+</button></span><b>{p.minimumStock}</b><span>{formatMoney(p.cost / 100)}</span><span>{formatMoney(p.salePrice / 100)}</span><span className="inventory-actions"><button className="sell-button" type="button" disabled={p.quantity < 1 || p.salePrice < 1} onClick={() => { setSelling(p); setSaleQuantity(1); }}>Marcar vendido</button><button className="owner-delete" type="button" onClick={() => remove(p)}>Excluir</button></span></div>)}</div>)}{!products.length && <div className="agenda-empty">{notice || "Nenhum produto cadastrado."}</div>}</section>
     {selling && <div className="appointment-overlay" role="dialog" aria-modal="true" aria-label="Registrar venda de produto"><form className="tenant-form panel inventory-sale-modal" onSubmit={sellProduct}>
       <header><div><span className="section-kicker">VENDA DE PRODUTO</span><h2>{selling.name}</h2><p>A baixa no estoque e o lançamento financeiro acontecem juntos.</p></div><button type="button" className="editor-close" onClick={() => setSelling(null)}>×</button></header>
       <div className="editor-fields"><label>Quantidade<input type="number" min="1" max={selling.quantity} value={saleQuantity} onChange={(event) => setSaleQuantity(Math.max(1, Number(event.target.value) || 1))} required autoFocus /></label><label>Valor da venda<input value={formatMoney(selling.salePrice * saleQuantity / 100)} disabled /></label></div>

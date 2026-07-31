@@ -130,6 +130,9 @@ export async function POST(request: Request) {
   if (isMonthly && (!Number.isInteger(weekday) || weekday < 0 || weekday > 6 || !/^\d{2}:\d{2}$/.test(time) || !barber || !service)) {
     return Response.json({ error: "Defina dia, horário, profissional e serviço do mensalista" }, { status: 400 });
   }
+  if (isMonthly && !time.endsWith(":00")) {
+    return Response.json({ error: "Escolha um horário cheio, como 09:00, 10:00 ou 11:00" }, { status: 400 });
+  }
 
   if (isMonthly) {
     const [professional, selectedService, businessHours] = await Promise.all([

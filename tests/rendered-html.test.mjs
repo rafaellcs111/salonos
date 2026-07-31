@@ -333,4 +333,22 @@ test("gives each establishment a cashier profile while keeping finance owner-onl
   assert.match(notifications, /quantity <= minimum_stock/);
 });
 
+test("uses fixed hourly slots, confirms completed visits and prepares WhatsApp delivery", async () => {
+  const [page, appointments, clients, whatsapp] = await Promise.all([
+    source("app/page.tsx"),
+    source("app/api/appointments/route.ts"),
+    source("app/api/clients/route.ts"),
+    source("app/whatsapp.ts"),
+  ]);
+  assert.match(page, /minute \+= 60/);
+  assert.match(page, /CONFIRMAR ATENDIMENTO/);
+  assert.match(page, /Veio e realizou/);
+  assert.match(page, /inventorySections/);
+  assert.match(appointments, /body\.time\.endsWith\(":00"\)/);
+  assert.match(appointments, /isBlocked/);
+  assert.match(clients, /time\.endsWith\(":00"\)/);
+  assert.match(whatsapp, /whatsapp_outbox/);
+  assert.match(whatsapp, /appointment_confirmation/);
+});
+
 
