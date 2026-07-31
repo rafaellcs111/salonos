@@ -21,6 +21,7 @@ export const appointments = sqliteTable("appointments", {
   customerName: text("customer_name").notNull(),
   phone: text("phone").notNull(),
   cpf: text("cpf").notNull().default(""),
+  recurringClientId: integer("recurring_client_id"),
   barber: text("barber").notNull(),
   service: text("service").notNull(),
   date: text("date").notNull(),
@@ -45,6 +46,11 @@ export const clients = sqliteTable("clients", {
   tenantId: text("tenant_id").notNull(),
   name: text("name").notNull(),
   phone: text("phone").notNull(),
+  isMonthly: integer("is_monthly", { mode: "boolean" }).notNull().default(false),
+  recurringWeekday: integer("recurring_weekday"),
+  recurringTime: text("recurring_time").notNull().default(""),
+  recurringBarber: text("recurring_barber").notNull().default(""),
+  recurringService: text("recurring_service").notNull().default(""),
   createdAt: integer("created_at").notNull(),
 }, (table) => [
   uniqueIndex("clients_tenant_phone_unique").on(table.tenantId, table.phone),
@@ -129,5 +135,19 @@ export const inventoryProducts = sqliteTable("inventory_products", {
   cost: integer("cost").notNull().default(0),
   salePrice: integer("sale_price").notNull().default(0),
   updatedAt: integer("updated_at").notNull(),
+});
+
+export const inventorySales = sqliteTable("inventory_sales", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  saleToken: text("sale_token").notNull().unique(),
+  tenantId: text("tenant_id").notNull(),
+  productId: integer("product_id").notNull(),
+  productName: text("product_name").notNull(),
+  quantity: integer("quantity").notNull(),
+  unitPrice: integer("unit_price").notNull(),
+  totalAmount: integer("total_amount").notNull(),
+  saleDate: text("sale_date").notNull(),
+  soldAt: integer("sold_at").notNull(),
+  soldBy: text("sold_by").notNull().default(""),
 });
 

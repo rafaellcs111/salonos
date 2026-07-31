@@ -13,23 +13,17 @@ export async function GET(request: Request) {
     return Response.json({ error: "Período inválido" }, { status: 400 });
   }
 
-  const [summary, byBarber, transactions] = await Promise.all([
+  const [serviceSummary, byBarber, serviceTransactions, productSummary, productTransactions] = await Promise.all([
     env.DB.prepare(
-      `SELECT
-        COUNT(*) AS completedAppointments,
+      `SELECT COUNT(*) AS completedAppointments,
         ROUND(SUM(COALESCE((SELECT price FROM services s
           WHERE s.tenant_id = appointments.tenant_id AND s.name = appointments.service
-          ORDER BY s.id DESC LIMIT 1), 0)), 2) AS revenue,
-        ROUND(AVG(COALESCE((SELECT price FROM services s
-          WHERE s.tenant_id = appointments.tenant_id AND s.name = appointments.service
-          ORDER BY s.id DESC LIMIT 1), 0)), 2) AS averageTicket
+          ORDER BY s.id DESC LIMIT 1), 0)), 2) AS revenue
        FROM appointments
        WHERE tenant_id = ? AND status = 'completed' AND substr(date, 1, 7) = ?`,
     ).bind(access.tenantId, period).all(),
     env.DB.prepare(
-      `SELECT
-        barber,
-        COUNT(*) AS appointments,
+      `SELECT barber, COUNT(*) AS appointments,
         ROUND(SUM(COALESCE((SELECT price FROM services s
           WHERE s.tenant_id = appointments.tenant_id AND s.name = appointments.service
           ORDER BY s.id DESC LIMIT 1), 0)), 2) AS revenue,
@@ -41,35 +35,59 @@ export async function GET(request: Request) {
        GROUP BY barber ORDER BY revenue DESC`,
     ).bind(access.tenantId, period).all(),
     env.DB.prepare(
-      `SELECT id, customer_name AS customerName, barber, service, date, time,
+      `SELECT id, 'service' AS type, customer_name AS customerName, barber, service,
+        date, time, 1 AS quantity,
         COALESCE((SELECT price FROM services s
           WHERE s.tenant_id = appointments.tenant_id AND s.name = appointments.service
           ORDER BY s.id DESC LIMIT 1), 0) AS amount
        FROM appointments
-       WHERE tenant_id = ? AND status = 'completed' AND substr(date, 1, 7) = ?
-       ORDER BY date DESC, time DESC LIMIT 100`,
+       WHERE tenant_id = ? AND status = 'completed' AND substr(date, 1, 7) = ?`,
+    ).bind(access.tenantId, period).all(),
+    env.DB.prepare(
+      `SELECT COUNT(*) AS sales, COALESCE(SUM(quantity), 0) AS items,
+        COALESCE(SUM(total_amount), 0) AS revenueCents
+       FROM inventory_sales WHERE tenant_id = ? AND substr(sale_date, 1, 7) = ?`,
+    ).bind(access.tenantId, period).all(),
+    env.DB.prepare(
+      `SELECT id, 'product' AS type, 'Venda de produto' AS customerName, sold_by AS barber,
+        product_name AS service, sale_date AS date,
+        strftime('%H:%M', sold_at / 1000, 'unixepoch', '-3 hours') AS time,
+        quantity, total_amount / 100.0 AS amount
+       FROM inventory_sales
+       WHERE tenant_id = ? AND substr(sale_date, 1, 7) = ?`,
     ).bind(access.tenantId, period).all(),
   ]);
 
-  const barbers = byBarber.results.map((item) => {
+  const barbers = (byBarber.results as Array<Record<string, unknown>>).map((item) => {
     const revenue = Number(item.revenue || 0);
     const commissionRate = Number(item.commissionRate || 0);
     return { ...item, commission: Math.round(revenue * commissionRate) / 100 };
   });
-  const grossRevenue = Number(summary.results[0]?.revenue || 0);
-  const commissions = barbers.reduce((sum, item) => sum + Number(item.commission || 0), 0);
+  const serviceRevenue = Number(serviceSummary.results[0]?.revenue || 0);
+  const productRevenue = Number(productSummary.results[0]?.revenueCents || 0) / 100;
+  const commissions = barbers.reduce((sum: number, item) => sum + Number(item.commission || 0), 0);
+  const completedAppointments = Number(serviceSummary.results[0]?.completedAppointments || 0);
+  const productSales = Number(productSummary.results[0]?.sales || 0);
+  const transactions = [...serviceTransactions.results, ...productTransactions.results]
+    .sort((left, right) => `${right.date} ${right.time}`.localeCompare(`${left.date} ${left.time}`))
+    .slice(0, 150);
+  const transactionCount = completedAppointments + productSales;
+  const grossRevenue = serviceRevenue + productRevenue;
 
   return Response.json({
     summary: {
-      completedAppointments: Number(summary.results[0]?.completedAppointments || 0),
+      completedAppointments,
+      productSales,
+      productItems: Number(productSummary.results[0]?.items || 0),
+      serviceRevenue,
+      productRevenue,
       revenue: grossRevenue,
-      averageTicket: Number(summary.results[0]?.averageTicket || 0),
+      averageTicket: transactionCount ? grossRevenue / transactionCount : 0,
       commissions,
       netAfterCommissions: grossRevenue - commissions,
     },
     barbers,
-    transactions: transactions.results,
+    transactions,
     paymentProcessing: false,
   });
 }
-

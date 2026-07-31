@@ -17,6 +17,7 @@ async function ensureAppointmentsTable() {
     customer_name TEXT NOT NULL,
     phone TEXT NOT NULL,
     cpf TEXT NOT NULL DEFAULT '',
+    recurring_client_id INTEGER,
     barber TEXT NOT NULL,
     service TEXT NOT NULL,
     date TEXT NOT NULL,
@@ -66,14 +67,16 @@ export async function GET(request: Request) {
       ).bind(access.tenantId, date).all()
     : await env.DB.prepare(
         `SELECT id, customer_name AS customerName, phone, barber, service, date, time, status
-         FROM appointments WHERE tenant_id = ? ORDER BY date DESC, time LIMIT 100`,
+         FROM appointments
+         WHERE tenant_id = ? AND date >= date('now', '-60 days')
+         ORDER BY date, time LIMIT 2000`,
       ).bind(access.tenantId).all();
   return Response.json({ appointments: result.results });
 }
 
 export async function POST(request: Request) {
   const body = await request.json() as Record<string, string>;
-  const required = ["customerName", "phone", "cpf", "barber", "service", "date", "time"];
+  const required = ["customerName", "phone", "barber", "service", "date", "time"];
   if (required.some((field) => !body[field])) {
     return Response.json({ error: "Dados incompletos" }, { status: 400 });
   }
@@ -83,10 +86,6 @@ export async function POST(request: Request) {
   if (!body.customerName.trim() || body.phone.replace(/\D/g, "").length < 8) {
     return Response.json({ error: "Informe um nome e WhatsApp válidos" }, { status: 400 });
   }
-  if (!isValidCpf(body.cpf)) {
-    return Response.json({ error: "Informe um CPF válido" }, { status: 400 });
-  }
-  const cpf = normalizeCpf(body.cpf);
   const { date: today, minutes: currentMinutes } = getCurrentSaoPauloTime();
   if (body.date < today) {
     return Response.json({ error: "Não é possível agendar uma data passada" }, { status: 400 });
@@ -97,9 +96,14 @@ export async function POST(request: Request) {
   await ensureAppointmentsTable();
   const requestedTenant = body.tenant || TENANT;
   const requestedStatus = body.status || "confirmed";
+  const agendaAccess = await getTenantAccess(requestedTenant, "agenda");
+  const isPublicBooking = requestedStatus === "confirmed" && !agendaAccess;
+  if (isPublicBooking && !isValidCpf(body.cpf)) {
+    return Response.json({ error: "Informe um CPF válido" }, { status: 400 });
+  }
+  const cpf = body.cpf && isValidCpf(body.cpf) ? normalizeCpf(body.cpf) : "";
   if (requestedStatus !== "confirmed") {
-    const access = await getTenantAccess(requestedTenant, "agenda");
-    if (!access || !ALLOWED_STATUSES.has(requestedStatus)) {
+    if (!agendaAccess || !ALLOWED_STATUSES.has(requestedStatus)) {
       return Response.json({ error: "Status não autorizado" }, { status: 403 });
     }
   }
@@ -109,14 +113,16 @@ export async function POST(request: Request) {
     return Response.json({ error: "Barbearia indisponível" }, { status: 404 });
   }
   if (requestedStatus === "confirmed") {
-    const rateLimit = await consumeRateLimit({
-      namespace: "public-booking",
-      identifier: `${requestClientAddress(request)}:${requestedTenant}`,
-      limit: 20,
-      windowSeconds: 60 * 60,
-    });
-    if (!rateLimit.allowed) {
-      return rateLimitResponse(rateLimit, "Muitos agendamentos foram solicitados. Aguarde e tente novamente.");
+    if (isPublicBooking) {
+      const rateLimit = await consumeRateLimit({
+        namespace: "public-booking",
+        identifier: `${requestClientAddress(request)}:${requestedTenant}`,
+        limit: 20,
+        windowSeconds: 60 * 60,
+      });
+      if (!rateLimit.allowed) {
+        return rateLimitResponse(rateLimit, "Muitos agendamentos foram solicitados. Aguarde e tente novamente.");
+      }
     }
     const availabilityError = await validateProfessionalSlot(requestedTenant, body);
     if (availabilityError) return Response.json({ error: availabilityError }, { status: 409 });

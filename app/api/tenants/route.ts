@@ -190,6 +190,7 @@ export async function DELETE(request: Request) {
     env.DB.prepare("DELETE FROM barbers WHERE tenant_id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM business_hours WHERE tenant_id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM inventory_products WHERE tenant_id = ?").bind(body.id),
+    env.DB.prepare("DELETE FROM inventory_sales WHERE tenant_id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM tenants WHERE id = ?").bind(body.id),
   ]);
   const media = (env as unknown as { MEDIA: R2Bucket }).MEDIA;

@@ -92,6 +92,11 @@ type ClientSummary = {
   lastVisit: string;
   firstVisit: string;
   totalSpent: number;
+  isMonthly: number;
+  recurringWeekday: number | null;
+  recurringTime: string;
+  recurringBarber: string;
+  recurringService: string;
 };
 
 type TenantSummary = {
@@ -457,7 +462,7 @@ export default function Home() {
         {view === "master" ? <MasterContent section={activeNav} onNavigate={setActiveNav} /> : activeNav === "Agenda"
           ? <AgendaContent tenantId={tenantId} config={config} quickAction={quickAction} onActionHandled={() => setQuickAction(null)} />
           : activeNav === "Clientes"
-          ? <ClientsContent tenantId={tenantId} quickAction={quickAction} onActionHandled={() => setQuickAction(null)} />
+          ? <ClientsContent tenantId={tenantId} config={config} quickAction={quickAction} onActionHandled={() => setQuickAction(null)} />
           : activeNav === "Financeiro"
           ? <FinanceContent tenantId={tenantId} />
           : activeNav === "Estoque"
@@ -981,8 +986,9 @@ function SalonLogin({ onBack, onSuccess }: { onBack: () => void; onSuccess: (use
   return <main className="auth-page salon-login-page"><button className="back-button" onClick={onBack}>← Voltar</button><section className="auth-card"><Logo /><div className="auth-heading"><span className="section-kicker">ACESSO SALONOS</span><h1>Entre na sua conta</h1><p>Use o e-mail e a senha cadastrados pelo administrador.</p></div><form className="salon-login-form" onSubmit={submit}><label>E-mail<input name="email" type="email" autoComplete="email" required placeholder="voce@empresa.com" /></label><label>Senha<input name="password" type="password" autoComplete="current-password" required minLength={8} placeholder="Sua senha" /></label>{notice && <p className="editor-error">{notice}</p>}<button className="gold-button full" disabled={sending}>{sending ? "Entrando..." : "Entrar no SalonOS"}</button></form><div className="login-separator"><span>ou</span></div><a className="emergency-login" href="/api/auth/chatgpt"><ShieldCheck aria-hidden="true" /><span><strong>Acesso de emergência do Master</strong><small>Continuar com ChatGPT durante a migração</small></span></a><a className="customer-login-link" href="/agendar"><CalendarDays aria-hidden="true" /> Sou cliente e quero agendar</a></section></main>;
 }
 
-function ClientsContent({ tenantId, quickAction, onActionHandled }: {
+function ClientsContent({ tenantId, config, quickAction, onActionHandled }: {
   tenantId: string;
+  config: BusinessConfig;
   quickAction: QuickAction | null;
   onActionHandled: () => void;
 }) {
@@ -992,6 +998,7 @@ function ClientsContent({ tenantId, quickAction, onActionHandled }: {
   const [selected, setSelected] = useState<ClientSummary | null>(null);
   const [history, setHistory] = useState<(Appointment & { price: number })[]>([]);
   const [creating, setCreating] = useState(false);
+  const [creatingMonthly, setCreatingMonthly] = useState(false);
 
   function loadClients() {
     return fetch(`/api/clients?tenant=${encodeURIComponent(tenantId)}`)
@@ -1026,7 +1033,16 @@ function ClientsContent({ tenantId, quickAction, onActionHandled }: {
     const response = await fetch("/api/clients", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenant: tenantId, name: form.get("name"), phone: form.get("phone") }),
+      body: JSON.stringify({
+        tenant: tenantId,
+        name: form.get("name"),
+        phone: form.get("phone"),
+        isMonthly: creatingMonthly,
+        recurringWeekday: creatingMonthly ? Number(form.get("recurringWeekday")) : null,
+        recurringTime: creatingMonthly ? form.get("recurringTime") : "",
+        recurringBarber: creatingMonthly ? form.get("recurringBarber") : "",
+        recurringService: creatingMonthly ? form.get("recurringService") : "",
+      }),
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) {
@@ -1034,7 +1050,11 @@ function ClientsContent({ tenantId, quickAction, onActionHandled }: {
       return;
     }
     setCreating(false);
+    setCreatingMonthly(false);
     await loadClients();
+    if (creatingMonthly) {
+      setNotice(`${data.recurringCreated || 0} horários semanais reservados${data.recurringSkipped ? `; ${data.recurringSkipped} conflitos ignorados` : ""}.`);
+    }
   }
 
   function openClient(client: ClientSummary) {
@@ -1046,12 +1066,30 @@ function ClientsContent({ tenantId, quickAction, onActionHandled }: {
       .catch(() => setHistory([]));
   }
 
+  async function stopMonthly(client: ClientSummary) {
+    if (!window.confirm(`Encerrar o horário semanal de ${client.name}? Os próximos horários recorrentes serão removidos.`)) return;
+    const response = await fetch("/api/clients", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tenant: tenantId, phone: client.phone, action: "stop-monthly" }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      setNotice(data?.error || "Não foi possível encerrar a recorrência.");
+      return;
+    }
+    setSelected(null);
+    await loadClients();
+    setNotice("Recorrência encerrada e horários futuros liberados.");
+  }
+
   const visibleClients = clients.filter((client) => {
     const term = search.trim().toLowerCase();
     return !term || client.name.toLowerCase().includes(term) || client.phone.includes(term);
   });
   const totalVisits = clients.reduce((sum, client) => sum + Number(client.completed || 0), 0);
   const totalRevenue = clients.reduce((sum, client) => sum + Number(client.totalSpent || 0), 0);
+  const monthlyClients = clients.filter((client) => Boolean(client.isMonthly)).length;
 
   return <div className="clients-page">
     <div className="settings-intro clients-intro">
@@ -1059,36 +1097,38 @@ function ClientsContent({ tenantId, quickAction, onActionHandled }: {
       <div className="clients-actions"><label className="client-search"><span>⌕</span><input aria-label="Buscar clientes" placeholder="Buscar por nome ou telefone" value={search} onChange={(event) => setSearch(event.target.value)} /></label><button className="gold-button compact" onClick={() => setCreating(true)}>+ Novo cliente</button></div>
     </div>
     <div className="client-metrics">
-      <article><small>CLIENTES</small><strong>{clients.length}</strong><span>com histórico no estabelecimento</span></article>
+      <article><small>CLIENTES</small><strong>{clients.length}</strong><span>{monthlyClients} mensalistas com horário fixo</span></article>
       <article><small>VISITAS CONCLUÍDAS</small><strong>{totalVisits}</strong><span>atendimentos registrados</span></article>
       <article><small>RECEITA REGISTRADA</small><strong>{formatMoney(totalRevenue)}</strong><span>em serviços concluídos</span></article>
     </div>
     <section className="panel clients-panel">
       <div className="clients-head"><span>CLIENTE</span><span>CONTATO</span><span>ATENDIMENTOS</span><span>ÚLTIMA VISITA</span><span>VALOR</span><span /></div>
       {visibleClients.map((client) => <button className="client-row" key={client.phone} onClick={() => openClient(client)}>
-        <span className="client identity"><i>{client.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</i><strong>{client.name}</strong></span>
+        <span className="client identity"><i>{client.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</i><span><strong>{client.name}</strong>{Boolean(client.isMonthly) && <small className="monthly-badge">MENSALISTA · {weekdayLabel(client.recurringWeekday)} {client.recurringTime}</small>}</span></span>
         <span>{client.phone}</span><span>{client.appointments}</span><span>{formatBookingDate(client.lastVisit)}</span><b>{formatMoney(client.totalSpent)}</b><i>→</i>
       </button>)}
       {!visibleClients.length && <div className="agenda-empty">{search ? "Nenhum cliente encontrado." : notice}</div>}
     </section>
-    {selected && <ClientHistory client={selected} history={history} onClose={() => setSelected(null)} />}
+    {selected && <ClientHistory client={selected} history={history} onClose={() => setSelected(null)} onStopMonthly={() => stopMonthly(selected)} />}
     {creating && <div className="appointment-overlay" role="dialog" aria-modal="true" aria-label="Novo cliente"><form className="tenant-form panel quick-client-form" onSubmit={createClient}>
       <header><div><span className="section-kicker">CLIENTES</span><h2>Novo cliente</h2><p>Cadastre o contato para encontrá-lo rapidamente.</p></div><button type="button" className="editor-close" onClick={() => setCreating(false)}>×</button></header>
-      <div className="editor-fields"><label>Nome completo<input name="name" required minLength={2} autoFocus placeholder="Nome do cliente" /></label><label>WhatsApp<input name="phone" required minLength={8} placeholder="(00) 0 0000-0000" /></label></div>
+      <div className="editor-fields"><label>Nome completo<input name="name" required minLength={2} autoFocus placeholder="Nome do cliente" /></label><label>WhatsApp<input name="phone" required minLength={8} placeholder="(00) 0 0000-0000" /></label><label className="monthly-toggle"><input type="checkbox" checked={creatingMonthly} onChange={(event) => setCreatingMonthly(event.target.checked)} /><span><strong>Cliente mensalista</strong><small>Reserva o mesmo horário toda semana por 6 meses.</small></span></label>{creatingMonthly && <><label>Dia fixo<select name="recurringWeekday" required defaultValue="2"><option value="0">Domingo</option><option value="1">Segunda-feira</option><option value="2">Terça-feira</option><option value="3">Quarta-feira</option><option value="4">Quinta-feira</option><option value="5">Sexta-feira</option><option value="6">Sábado</option></select></label><label>Horário fixo<input name="recurringTime" type="time" required /></label><label>Profissional<select name="recurringBarber" required>{config.barbers.filter((item) => item.active).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Serviço<select name="recurringService" required>{config.services.filter((item) => item.active).map((item) => <option key={item.name}>{item.name}</option>)}</select></label></>}</div>
       <div className="editor-actions"><button type="button" className="outline-button" onClick={() => setCreating(false)}>Cancelar</button><button className="gold-button compact" type="submit">Salvar cliente</button></div>
     </form></div>}
   </div>;
 }
 
-function ClientHistory({ client, history, onClose }: {
+function ClientHistory({ client, history, onClose, onStopMonthly }: {
   client: ClientSummary;
   history: (Appointment & { price: number })[];
   onClose: () => void;
+  onStopMonthly: () => void;
 }) {
   const labels: Record<string, string> = { confirmed: "Confirmado", waiting: "Aguardando", completed: "Concluído", cancelled: "Cancelado" };
   return <div className="appointment-overlay" role="dialog" aria-modal="true" aria-label="Histórico do cliente">
     <section className="client-history panel">
       <header><div className="history-person"><span className="avatar">{client.name[0]}</span><div><span className="section-kicker">HISTÓRICO DO CLIENTE</span><h2>{client.name}</h2><p>{client.phone} · cliente desde {formatBookingDate(client.firstVisit)}</p></div></div><button className="editor-close" onClick={onClose} aria-label="Fechar">×</button></header>
+      {Boolean(client.isMonthly) && <div className="monthly-summary"><span><small>HORÁRIO FIXO SEMANAL</small><strong>{weekdayLabel(client.recurringWeekday)} às {client.recurringTime}</strong><em>{client.recurringService} com {client.recurringBarber}</em></span><button className="danger-button" onClick={onStopMonthly}>Encerrar recorrência</button></div>}
       <div className="history-summary"><span><small>ATENDIMENTOS</small><strong>{client.appointments}</strong></span><span><small>CONCLUÍDOS</small><strong>{client.completed}</strong></span><span><small>VALOR TOTAL</small><strong>{formatMoney(client.totalSpent)}</strong></span></div>
       <div className="history-list">{history.map((item) => <div className="history-row" key={item.id}>
         <span><strong>{formatBookingDate(item.date)} · {item.time}</strong><small>{item.service} com {item.barber}</small></span>
@@ -1103,12 +1143,16 @@ function formatMoney(value: number) {
   return Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function weekdayLabel(value: number | null) {
+  return ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][Number(value)] || "";
+}
+
 function FinanceContent({ tenantId }: { tenantId: string }) {
   const [period, setPeriod] = useState(toLocalISODate(new Date()).slice(0, 7));
   const [data, setData] = useState<{
-    summary: { completedAppointments: number; revenue: number; averageTicket: number; commissions: number; netAfterCommissions: number };
+    summary: { completedAppointments: number; productSales: number; productItems: number; serviceRevenue: number; productRevenue: number; revenue: number; averageTicket: number; commissions: number; netAfterCommissions: number };
     barbers: { barber: string; appointments: number; revenue: number; commissionRate: number; commission: number }[];
-    transactions: { id: number; customerName: string; barber: string; service: string; date: string; time: string; amount: number }[];
+    transactions: { id: number; type: "service" | "product"; customerName: string; barber: string; service: string; date: string; time: string; quantity: number; amount: number }[];
   } | null>(null);
   const [notice, setNotice] = useState("Carregando resultados...");
 
@@ -1135,17 +1179,17 @@ function FinanceContent({ tenantId }: { tenantId: string }) {
   }, [period, tenantId]);
   useAutoRefresh(() => { loadFinance(true); });
 
-  const summary = data?.summary || { completedAppointments: 0, revenue: 0, averageTicket: 0, commissions: 0, netAfterCommissions: 0 };
+  const summary = data?.summary || { completedAppointments: 0, productSales: 0, productItems: 0, serviceRevenue: 0, productRevenue: 0, revenue: 0, averageTicket: 0, commissions: 0, netAfterCommissions: 0 };
   const maxRevenue = Math.max(...(data?.barbers || []).map((item) => Number(item.revenue)), 1);
 
   return <div className="finance-page">
     <div className="settings-intro finance-intro">
-      <div><span className="section-kicker">GESTÃO FINANCEIRA</span><h2>Financeiro</h2><p>Visão gerencial baseada nos atendimentos concluídos.</p></div>
+      <div><span className="section-kicker">GESTÃO FINANCEIRA</span><h2>Financeiro</h2><p>Serviços concluídos e vendas de produtos no mesmo resultado.</p></div>
       <div className="finance-controls"><span className="no-payments">SEM PAGAMENTOS NA PLATAFORMA</span><input aria-label="Selecionar mês" type="month" value={period} onChange={(event) => setPeriod(event.target.value)} /></div>
     </div>
     <div className="finance-metrics">
-      <article><small>FATURAMENTO REALIZADO</small><strong>{formatMoney(summary.revenue)}</strong><span>{summary.completedAppointments} atendimentos concluídos</span></article>
-      <article><small>TICKET MÉDIO</small><strong>{formatMoney(summary.averageTicket)}</strong><span>por atendimento concluído</span></article>
+      <article><small>FATURAMENTO REALIZADO</small><strong>{formatMoney(summary.revenue)}</strong><span>{formatMoney(summary.serviceRevenue)} serviços · {formatMoney(summary.productRevenue)} produtos</span></article>
+      <article><small>TICKET MÉDIO</small><strong>{formatMoney(summary.averageTicket)}</strong><span>{summary.completedAppointments} serviços · {summary.productSales} vendas</span></article>
       <article><small>COMISSÕES ESTIMADAS</small><strong>{formatMoney(summary.commissions)}</strong><span>conforme percentual da equipe</span></article>
       <article><small>SALDO APÓS COMISSÕES</small><strong>{formatMoney(summary.netAfterCommissions)}</strong><span>valor gerencial, não liquidado</span></article>
     </div>
@@ -1158,13 +1202,13 @@ function FinanceContent({ tenantId }: { tenantId: string }) {
         </div>)}
         {!data.barbers.length && <div className="agenda-empty">Nenhum atendimento concluído neste período.</div>}
       </section>
-      <section className="panel finance-records"><header><div><h2>Atendimentos contabilizados</h2><p>Registro operacional, sem cobrança online</p></div></header>
-        <div className="finance-head"><span>DATA</span><span>CLIENTE</span><span>SERVIÇO</span><span>VALOR</span></div>
-        {data.transactions.map((item) => <div className="finance-row" key={item.id}><span>{formatBookingDate(item.date)} · {item.time}</span><span><strong>{item.customerName}</strong><small>{item.barber}</small></span><span>{item.service}</span><b>{formatMoney(item.amount)}</b></div>)}
+      <section className="panel finance-records"><header><div><h2>Lançamentos contabilizados</h2><p>Serviços e produtos, sem cobrança online</p></div></header>
+        <div className="finance-head"><span>DATA</span><span>ORIGEM</span><span>ITEM</span><span>VALOR</span></div>
+        {data.transactions.map((item) => <div className="finance-row" key={`${item.type}-${item.id}`}><span>{formatBookingDate(item.date)} · {item.time}</span><span><strong>{item.type === "product" ? "Venda de produto" : item.customerName}</strong><small>{item.type === "product" ? `${item.quantity} unidade(s)` : item.barber}</small></span><span>{item.service}</span><b>{formatMoney(item.amount)}</b></div>)}
         {!data.transactions.length && <div className="agenda-empty">Sem lançamentos neste mês.</div>}
       </section>
     </div>}
-    <p className="finance-disclaimer">Os valores são calculados a partir dos serviços marcados como concluídos. O SalonOS não recebe, processa nem transfere pagamentos.</p>
+    <p className="finance-disclaimer">Os valores consideram serviços concluídos e produtos marcados como vendidos. O SalonOS não recebe, processa nem transfere pagamentos.</p>
   </div>;
 }
 
@@ -2063,6 +2107,9 @@ function InventoryContent({ tenantId }: { tenantId: string }) {
   type Product = { id: number; name: string; category: string; quantity: number; minimumStock: number; cost: number; salePrice: number };
   const [products, setProducts] = useState<Product[]>([]);
   const [notice, setNotice] = useState("Carregando estoque...");
+  const [selling, setSelling] = useState<Product | null>(null);
+  const [saleQuantity, setSaleQuantity] = useState(1);
+  const [sellingNow, setSellingNow] = useState(false);
   const load = () => fetch(`/api/inventory?tenant=${encodeURIComponent(tenantId)}`).then(async (r) => {
     const data = await r.json(); if (!r.ok) throw new Error(data.error); setProducts(data.products || []); setNotice("");
   }).catch((e) => setNotice(e.message || "Não foi possível carregar o estoque."));
@@ -2080,12 +2127,39 @@ function InventoryContent({ tenantId }: { tenantId: string }) {
     if (!window.confirm(`Excluir ${product.name} do estoque?`)) return;
     await fetch(`/api/inventory?tenant=${encodeURIComponent(tenantId)}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: product.id }) }); load();
   }
+  async function sellProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selling) return;
+    setSellingNow(true);
+    const response = await fetch(`/api/inventory?tenant=${encodeURIComponent(tenantId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: selling.id, action: "sell", quantity: saleQuantity }),
+    });
+    const data = await response.json().catch(() => null);
+    setSellingNow(false);
+    if (!response.ok) {
+      setNotice(data?.error || "Não foi possível registrar a venda.");
+      return;
+    }
+    setSelling(null);
+    setSaleQuantity(1);
+    await load();
+    setNotice(`${data.sale.quantity}x ${data.sale.productName} vendido. ${formatMoney(data.sale.total / 100)} lançado no financeiro.`);
+  }
   const low = products.filter((p) => p.quantity <= p.minimumStock).length;
   const value = products.reduce((sum, p) => sum + p.quantity * p.cost, 0);
   return <div className="inventory-page"><div className="settings-intro"><div><span className="section-kicker">PRODUTOS E INSUMOS</span><h2>Controle de estoque</h2><p>Acompanhe pomadas, shampoos, lâminas e produtos para venda.</p></div></div>
     <div className="inventory-metrics"><article><small>PRODUTOS</small><strong>{products.length}</strong></article><article><small>ESTOQUE BAIXO</small><strong>{low}</strong></article><article><small>VALOR EM ESTOQUE</small><strong>{formatMoney(value / 100)}</strong></article></div>
     <form className="panel inventory-form" onSubmit={add}><input name="name" required placeholder="Nome do produto" /><input name="category" placeholder="Categoria" /><input name="quantity" type="number" min="0" placeholder="Quantidade" /><input name="minimumStock" type="number" min="0" placeholder="Estoque mínimo" /><input name="cost" type="number" min="0" step=".01" placeholder="Custo R$" /><input name="salePrice" type="number" min="0" step=".01" placeholder="Venda R$" /><button className="gold-button compact">Adicionar produto</button></form>
-    <section className="panel inventory-list"><div className="inventory-head"><span>PRODUTO</span><span>QUANTIDADE</span><span>MÍNIMO</span><span>CUSTO</span><span>VENDA</span><span>AÇÕES</span></div>{products.map((p) => <div className={`inventory-row ${p.quantity <= p.minimumStock ? "low" : ""}`} key={p.id}><span><strong>{p.name}</strong><small>{p.category}</small></span><span className="stock-adjust"><button onClick={() => adjust(p.id, -1)}>−</button><b>{p.quantity}</b><button onClick={() => adjust(p.id, 1)}>+</button></span><b>{p.minimumStock}</b><span>{formatMoney(p.cost / 100)}</span><span>{formatMoney(p.salePrice / 100)}</span><button className="owner-delete" onClick={() => remove(p)}>Excluir</button></div>)}{!products.length && <div className="agenda-empty">{notice || "Nenhum produto cadastrado."}</div>}</section>
+    {notice && <p className="inventory-notice">{notice}</p>}
+    <section className="panel inventory-list"><div className="inventory-head"><span>PRODUTO</span><span>QUANTIDADE</span><span>MÍNIMO</span><span>CUSTO</span><span>VENDA</span><span>AÇÕES</span></div>{products.map((p) => <div className={`inventory-row ${p.quantity <= p.minimumStock ? "low" : ""}`} key={p.id}><span><strong>{p.name}</strong><small>{p.category}</small></span><span className="stock-adjust"><button type="button" onClick={() => adjust(p.id, -1)}>−</button><b>{p.quantity}</b><button type="button" onClick={() => adjust(p.id, 1)}>+</button></span><b>{p.minimumStock}</b><span>{formatMoney(p.cost / 100)}</span><span>{formatMoney(p.salePrice / 100)}</span><span className="inventory-actions"><button className="sell-button" type="button" disabled={p.quantity < 1 || p.salePrice < 1} onClick={() => { setSelling(p); setSaleQuantity(1); }}>Marcar vendido</button><button className="owner-delete" type="button" onClick={() => remove(p)}>Excluir</button></span></div>)}{!products.length && <div className="agenda-empty">{notice || "Nenhum produto cadastrado."}</div>}</section>
+    {selling && <div className="appointment-overlay" role="dialog" aria-modal="true" aria-label="Registrar venda de produto"><form className="tenant-form panel inventory-sale-modal" onSubmit={sellProduct}>
+      <header><div><span className="section-kicker">VENDA DE PRODUTO</span><h2>{selling.name}</h2><p>A baixa no estoque e o lançamento financeiro acontecem juntos.</p></div><button type="button" className="editor-close" onClick={() => setSelling(null)}>×</button></header>
+      <div className="editor-fields"><label>Quantidade<input type="number" min="1" max={selling.quantity} value={saleQuantity} onChange={(event) => setSaleQuantity(Math.max(1, Number(event.target.value) || 1))} required autoFocus /></label><label>Valor da venda<input value={formatMoney(selling.salePrice * saleQuantity / 100)} disabled /></label></div>
+      <div className="sale-stock-info">Disponível no estoque: <strong>{selling.quantity}</strong></div>
+      <div className="editor-actions"><button type="button" className="outline-button" onClick={() => setSelling(null)}>Cancelar</button><button className="gold-button compact" type="submit" disabled={sellingNow}>{sellingNow ? "Registrando..." : "Confirmar venda"}</button></div>
+    </form></div>}
   </div>;
 }
 
