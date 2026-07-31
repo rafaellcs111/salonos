@@ -1,0 +1,9 @@
+DELETE FROM inventory_sales;
+DELETE FROM inventory_products;
+DELETE FROM appointments;
+DELETE FROM clients;
+DELETE FROM services;
+DELETE FROM barbers;
+DELETE FROM business_hours;
+DELETE FROM audit_logs;
+DELETE FROM tenants;

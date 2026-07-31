@@ -257,6 +257,40 @@ test("forces the dark booking experience for barbershops", async () => {
   assert.match(tenants, /businessType === "barbershop" \? "black" : requestedTheme/);
 });
 
+test("records inventory sales in finance and creates conflict-safe recurring clients", async () => {
+  const [inventory, finance, clients, appointments, schema, migration, page] = await Promise.all([
+    source("app/api/inventory/route.ts"),
+    source("app/api/finance/route.ts"),
+    source("app/api/clients/route.ts"),
+    source("app/api/appointments/route.ts"),
+    source("db/schema.ts"),
+    source("drizzle/0020_inventory_sales_and_recurring_clients.sql"),
+    source("app/page.tsx"),
+  ]);
+
+  assert.match(inventory, /action === "sell"/);
+  assert.match(inventory, /INSERT INTO inventory_sales/);
+  assert.match(inventory, /quantity = quantity -/);
+  assert.match(finance, /productRevenue/);
+  assert.match(finance, /serviceTransactions/);
+  assert.match(clients, /weeklyDates\(weekday, 26\)/);
+  assert.match(clients, /requestedStart < occupiedStart/);
+  assert.match(appointments, /isPublicBooking/);
+  assert.match(schema, /export const inventorySales/);
+  assert.match(migration, /recurring_client_id/);
+  assert.match(page, /Marcar vendido/);
+  assert.match(page, /Cliente mensalista/);
+});
+
+test("ships an explicit one-time reset with no registered establishments", async () => {
+  const reset = await source("drizzle/0021_reset_empty_tenant_catalog.sql");
+  assert.match(reset, /DELETE FROM inventory_sales/);
+  assert.match(reset, /DELETE FROM appointments/);
+  assert.match(reset, /DELETE FROM clients/);
+  assert.match(reset, /DELETE FROM tenants/);
+  assert.doesNotMatch(reset, /DELETE FROM platform_admins/);
+});
+
 test("refreshes operational data automatically and restores the authenticated workspace", async () => {
   const page = await source("app/page.tsx");
 
