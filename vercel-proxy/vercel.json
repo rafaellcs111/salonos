@@ -3,11 +3,11 @@
   "rewrites": [
     {
       "source": "/",
-      "destination": "https://barberos-chosen.rafaelviamaquinas.chatgpt.site/"
+      "destination": "https://salonos-gestao.rafaeldoneda16.chatgpt.site/"
     },
     {
       "source": "/:path*",
-      "destination": "https://barberos-chosen.rafaelviamaquinas.chatgpt.site/:path*"
+      "destination": "https://salonos-gestao.rafaeldoneda16.chatgpt.site/:path*"
     }
   ]
 }
