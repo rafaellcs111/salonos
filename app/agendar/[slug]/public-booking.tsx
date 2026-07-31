@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { MessageCircle } from "lucide-react";
+import { formatCpf, isValidCpf, normalizeCpf } from "../../lib/cpf";
 
 type Storefront = {
   tenant: { id: string; name: string; slug: string; city: string; phone: string; logoUrl: string | null; businessType: "salon" | "barbershop"; theme: "black" | "white" };
@@ -31,6 +32,7 @@ export default function PublicBooking({ slug }: { slug: string }) {
   const [occupied, setOccupied] = useState<{ time: string; duration: number }[]>([]);
   const [success, setSuccess] = useState(false);
   const [sending, setSending] = useState(false);
+  const [cpf, setCpf] = useState("");
 
   useEffect(() => {
     fetch(`/api/storefront/${encodeURIComponent(slug)}`)
@@ -127,12 +129,16 @@ export default function PublicBooking({ slug }: { slug: string }) {
       return;
     }
     const form = new FormData(event.currentTarget);
+    if (!isValidCpf(cpf)) {
+      setError("Informe um CPF válido para confirmar o agendamento.");
+      return;
+    }
     setSending(true);
     setError("");
     const response = await fetch("/api/appointments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenant: store.tenant.id, customerName: form.get("name"), phone: form.get("phone"), service, barber, date, time }),
+      body: JSON.stringify({ tenant: store.tenant.id, customerName: form.get("name"), phone: form.get("phone"), cpf: normalizeCpf(cpf), service, barber, date, time }),
     });
     setSending(false);
     if (response.ok) {
@@ -157,7 +163,7 @@ export default function PublicBooking({ slug }: { slug: string }) {
       <fieldset><legend>1. Serviço</legend><div className="public-options">{store.services.map((item) => <button type="button" key={item.name} className={service === item.name ? "selected" : ""} onClick={() => setService(item.name)}><span><strong>{item.name}</strong><small>{item.duration} min</small></span><b>R$ {item.price}</b></button>)}</div></fieldset>
       <fieldset><legend>2. Profissional</legend><div className="public-options compact">{eligibleBarbers.map((item) => <button type="button" key={item.name} className={barber === item.name ? "selected" : ""} onClick={() => setBarber(item.name)}><span className="avatar public-barber-photo">{item.photoUrl ? <img src={item.photoUrl} alt={`Foto de ${item.name}`} /> : item.name[0]}</span><strong>{item.name}</strong></button>)}</div>{!eligibleBarbers.length && <p className="empty-message">Nenhum profissional atende este serviço no momento.</p>}</fieldset>
       <fieldset><legend>3. Data e horário</legend><div className="public-dates">{dates.map((item) => { const value = localDate(item); return <button type="button" className={date === value ? "selected" : ""} key={value} onClick={() => setDate(value)}><small>{item.toLocaleDateString("pt-BR", { weekday: "short" })}</small><strong>{item.getDate()}</strong></button>; })}</div><div className="public-times">{slots.map((slot) => <button type="button" className={time === slot ? "selected" : ""} key={slot} onClick={() => setTime(slot)}>{slot}</button>)}</div></fieldset>
-      <fieldset><legend>4. Seus dados</legend><div className="customer-fields"><label>Nome completo<input name="name" required minLength={3} /></label><label>WhatsApp<input name="phone" required minLength={8} /></label></div></fieldset>
+      <fieldset><legend>4. Seus dados</legend><div className="customer-fields"><label>Nome completo<input name="name" required minLength={3} autoComplete="name" /></label><label>WhatsApp<input name="phone" required minLength={8} inputMode="tel" autoComplete="tel" /></label><label>CPF<input name="cpf" required inputMode="numeric" autoComplete="off" maxLength={14} placeholder="000.000.000-00" value={cpf} onChange={(event) => setCpf(formatCpf(event.target.value))} aria-describedby="cpf-help" /></label></div><p className="cpf-help" id="cpf-help">O CPF é usado somente para validar e identificar este agendamento.</p></fieldset>
       {error && <p className="error">{error}</p>}<button className="gold-button full" disabled={sending || !time}>{sending ? "Confirmando..." : "Confirmar agendamento →"}</button>
     </form>
   </main>;

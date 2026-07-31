@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { getTenantAccess } from "../../tenant-access";
+import { isValidCpf, normalizeCpf } from "../../lib/cpf";
 import {
   consumeRateLimit,
   rateLimitResponse,
@@ -15,6 +16,7 @@ async function ensureAppointmentsTable() {
     tenant_id TEXT NOT NULL,
     customer_name TEXT NOT NULL,
     phone TEXT NOT NULL,
+    cpf TEXT NOT NULL DEFAULT '',
     barber TEXT NOT NULL,
     service TEXT NOT NULL,
     date TEXT NOT NULL,
@@ -71,7 +73,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const body = await request.json() as Record<string, string>;
-  const required = ["customerName", "phone", "barber", "service", "date", "time"];
+  const required = ["customerName", "phone", "cpf", "barber", "service", "date", "time"];
   if (required.some((field) => !body[field])) {
     return Response.json({ error: "Dados incompletos" }, { status: 400 });
   }
@@ -81,6 +83,10 @@ export async function POST(request: Request) {
   if (!body.customerName.trim() || body.phone.replace(/\D/g, "").length < 8) {
     return Response.json({ error: "Informe um nome e WhatsApp válidos" }, { status: 400 });
   }
+  if (!isValidCpf(body.cpf)) {
+    return Response.json({ error: "Informe um CPF válido" }, { status: 400 });
+  }
+  const cpf = normalizeCpf(body.cpf);
   const { date: today, minutes: currentMinutes } = getCurrentSaoPauloTime();
   if (body.date < today) {
     return Response.json({ error: "Não é possível agendar uma data passada" }, { status: 400 });
@@ -118,12 +124,13 @@ export async function POST(request: Request) {
 
   try {
     await env.DB.prepare(`INSERT INTO appointments
-      (tenant_id, customer_name, phone, barber, service, date, time, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (tenant_id, customer_name, phone, cpf, barber, service, date, time, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(
         requestedTenant,
         body.customerName.trim().slice(0, 100),
         body.phone.trim().slice(0, 30),
+        cpf,
         body.barber.trim().slice(0, 100),
         body.service.trim().slice(0, 100),
         body.date,
@@ -146,12 +153,13 @@ export async function POST(request: Request) {
     await env.DB.batch([
       env.DB.prepare("DELETE FROM appointments WHERE id = ? AND tenant_id = ?").bind(cancelledId, requestedTenant),
       env.DB.prepare(`INSERT INTO appointments
-        (tenant_id, customer_name, phone, barber, service, date, time, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        (tenant_id, customer_name, phone, cpf, barber, service, date, time, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(
           requestedTenant,
           body.customerName.trim().slice(0, 100),
           body.phone.trim().slice(0, 30),
+          cpf,
           body.barber.trim().slice(0, 100),
           body.service.trim().slice(0, 100),
           body.date,

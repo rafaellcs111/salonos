@@ -20,6 +20,7 @@ export const appointments = sqliteTable("appointments", {
   tenantId: text("tenant_id").notNull(),
   customerName: text("customer_name").notNull(),
   phone: text("phone").notNull(),
+  cpf: text("cpf").notNull().default(""),
   barber: text("barber").notNull(),
   service: text("service").notNull(),
   date: text("date").notNull(),
