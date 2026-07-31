@@ -14,7 +14,7 @@ export async function GET(_request: Request, context: { params: Promise<{ slug: 
     env.DB.prepare("SELECT name, price, duration FROM services WHERE tenant_id = ? AND active = 1 ORDER BY id").bind(tenant.id).all(),
     env.DB.prepare(`SELECT name, photo_key AS photoKey, services, work_days AS workDays, work_start AS workStart,
       work_end AS workEnd, break_start AS breakStart, break_end AS breakEnd, time_off AS timeOff
-      FROM barbers WHERE tenant_id = ? AND active = 1 ORDER BY id`).bind(tenant.id).all(),
+      FROM barbers WHERE tenant_id = ? AND active = 1 AND lower(role) != 'caixa' ORDER BY id`).bind(tenant.id).all(),
     env.DB.prepare("SELECT label, days, open, close FROM business_hours WHERE tenant_id = ? AND active = 1 ORDER BY id").bind(tenant.id).all(),
   ]);
   return Response.json({

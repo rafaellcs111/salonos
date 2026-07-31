@@ -75,7 +75,7 @@ export const barbers = sqliteTable("barbers", {
   breakStart: text("break_start").notNull().default(""),
   breakEnd: text("break_end").notNull().default(""),
   timeOff: text("time_off").notNull().default("[]"),
-  permissions: text("permissions").notNull().default('{"agenda":true,"clients":true,"finance":false,"settings":false}'),
+  permissions: text("permissions").notNull().default('{"agenda":true,"clients":true,"inventory":false,"finance":false,"settings":false}'),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
 });
 

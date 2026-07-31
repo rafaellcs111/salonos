@@ -42,8 +42,8 @@ const navItems = ["Visão geral", "Agenda", "Clientes", "Equipe", "Serviços", "
 const adminNavIcons = [LayoutDashboard, CalendarDays, UserRound, UsersRound, Scissors, CircleDollarSign, PackageOpen];
 const masterNavItems = ["Visão geral", "Estabelecimentos", "Assinaturas", "Planos", "Usuários Master", "Atividades", "Suporte"];
 const masterNavIcons = [LayoutDashboard, Store, CreditCard, BadgePercent, UsersRound, History, LifeBuoy];
-type PanelPermissions = { agenda: boolean; clients: boolean; finance: boolean; settings: boolean };
-const allPanelPermissions: PanelPermissions = { agenda: true, clients: true, finance: true, settings: true };
+type PanelPermissions = { agenda: boolean; clients: boolean; inventory: boolean; finance: boolean; settings: boolean };
+const allPanelPermissions: PanelPermissions = { agenda: true, clients: true, inventory: true, finance: true, settings: true };
 
 type BusinessConfig = {
   services: { name: string; price: number; duration: number; active: boolean }[];
@@ -63,7 +63,7 @@ type BusinessConfig = {
     breakStart: string;
     breakEnd: string;
     timeOff: { start: string; end: string; label: string }[];
-    permissions: { agenda: boolean; clients: boolean; finance: boolean; settings: boolean };
+    permissions: { agenda: boolean; clients: boolean; inventory?: boolean; finance: boolean; settings: boolean };
     active: boolean;
   }[];
   hours: { label: string; days: string; open: string; close: string; active: boolean }[];
@@ -211,6 +211,7 @@ export default function Home() {
   const [saveNotice, setSaveNotice] = useState("");
   const [quickAction, setQuickAction] = useState<QuickAction | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [sessionResolved, setSessionResolved] = useState(false);
 
   useEffect(() => {
     fetch("/api/me").then((r) => r.ok ? r.json() : null).then(async (user) => {
@@ -238,14 +239,14 @@ export default function Home() {
             ? masterNavItems
             : [...navItems, "Configurações"];
           if (savedNav && allowedNav.includes(savedNav)) setActiveNav(savedNav);
-          setView(authenticatedView);
         }
+        setView(authenticatedView);
         if (new URLSearchParams(window.location.search).get("emergency") === "1") {
-          setView(user.isOwner ? "master" : "admin");
           window.history.replaceState({}, "", "/");
         }
       }
-    }).catch(() => fetch("/api/config").then((r) => r.ok ? r.json() : defaultConfig).then(setConfig));
+    }).catch(() => fetch("/api/config").then((r) => r.ok ? r.json() : defaultConfig).then(setConfig))
+      .finally(() => setSessionResolved(true));
   }, []);
 
   useEffect(() => {
@@ -286,7 +287,7 @@ export default function Home() {
     if (item === "Agenda") return permissions.agenda;
     if (item === "Clientes") return permissions.clients;
     if (item === "Financeiro") return permissions.finance && tenantPlan !== "starter";
-    if (item === "Estoque") return permissions.settings && tenantPlan !== "starter";
+    if (item === "Estoque") return permissions.inventory && tenantPlan !== "starter";
     if (item === "Equipe") return permissions.settings;
     if (item === "Serviços") return permissions.settings;
     return true;
@@ -309,6 +310,10 @@ export default function Home() {
   function openQuickAction(action: QuickAction) {
     setQuickAction(action);
     setActiveNav(action === "client" ? "Clientes" : "Agenda");
+  }
+
+  if (!sessionResolved) {
+    return <main className="auth-page session-loading"><Logo /><p>Carregando seu espaço...</p></main>;
   }
 
   async function confirmBooking(event: FormEvent<HTMLFormElement>) {
@@ -458,7 +463,7 @@ export default function Home() {
         <div className="sidebar-bottom">{permissions.settings && <button className={activeNav === "Configurações" ? "active" : ""} onClick={() => { setQuickAction(null); setActiveNav("Configurações"); }}><Settings aria-hidden="true" /> Configurações</button>}<div className="user-chip"><span>{userName.slice(0, 2).toUpperCase()}</span><div><strong>{userName}</strong><small>{signedIn ? view === "master" ? masterRole : accountRole === "staff" ? "Acesso individual" : "Sessão protegida" : "Demonstração"}</small></div><button aria-label={signedIn ? "Sair" : "Entrar"} onClick={() => window.location.assign(signedIn ? "/api/auth/logout" : "/")}>{signedIn ? <LogOut aria-hidden="true" /> : <LogIn aria-hidden="true" />}</button></div></div>
       </aside>
       <section className="app-main">
-        <header className="app-header"><div><span className="mobile-label">SalonOS</span><h1>{title}</h1><p>{view === "master" ? "Acompanhe toda a operação da plataforma." : (shareNotice || (accountRole === "staff" ? "Acesso conforme suas permissões" : "Gestão da sua barbearia"))}</p></div><div className="header-tools"><button className="icon-button" aria-label="Buscar"><Search aria-hidden="true" /></button><button className="icon-button" aria-label="Notificações"><Bell aria-hidden="true" /></button>{view === "admin" && <button className="outline-button compact" onClick={copyBookingLink}><Link2 aria-hidden="true" /> Copiar link</button>}{view === "admin" && permissions.agenda && <button className="gold-button compact" onClick={() => openQuickAction("appointment")}><CalendarRange aria-hidden="true" /> Novo agendamento</button>}</div></header>
+        <header className="app-header"><div><span className="mobile-label">SalonOS</span><h1>{title}</h1><p>{view === "master" ? "Acompanhe toda a operação da plataforma." : (shareNotice || (accountRole === "staff" ? "Acesso conforme suas permissões" : "Gestão da sua barbearia"))}</p></div><div className="header-tools"><button className="icon-button" aria-label="Buscar"><Search aria-hidden="true" /></button>{view === "admin" && accountRole === "owner" && <OwnerNotifications tenantId={tenantId} onNavigate={setActiveNav} />}{view === "admin" && <button className="outline-button compact" onClick={copyBookingLink}><Link2 aria-hidden="true" /> Copiar link</button>}{view === "admin" && permissions.agenda && <button className="gold-button compact" onClick={() => openQuickAction("appointment")}><CalendarRange aria-hidden="true" /> Novo agendamento</button>}</div></header>
         {view === "master" ? <MasterContent section={activeNav} onNavigate={setActiveNav} /> : activeNav === "Agenda"
           ? <AgendaContent tenantId={tenantId} config={config} quickAction={quickAction} onActionHandled={() => setQuickAction(null)} />
           : activeNav === "Clientes"
@@ -476,9 +481,84 @@ export default function Home() {
   </>);
 }
 
+function OwnerNotifications({ tenantId, onNavigate }: { tenantId: string; onNavigate: (section: string) => void }) {
+  type Notification = {
+    id: string;
+    kind: "agenda" | "stock";
+    title: string;
+    detail: string;
+    target: "Agenda" | "Estoque";
+    urgent: boolean;
+  };
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  function load() {
+    return fetch(`/api/notifications?tenant=${encodeURIComponent(tenantId)}`)
+      .then((response) => response.ok ? response.json() : { notifications: [] })
+      .then((data) => {
+        setItems(data.notifications || []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }
+
+  useEffect(() => { load(); }, [tenantId]);
+  useAutoRefresh(load);
+
+  function toggle() {
+    playBellSound();
+    setOpen((current) => !current);
+    if (!open) load();
+  }
+
+  return <div className="owner-notifications">
+    <button className="icon-button notification-button" aria-label={`Notificações: ${items.length}`} aria-expanded={open} onClick={toggle}>
+      <Bell aria-hidden="true" />
+      {items.length > 0 && <b>{items.length > 99 ? "99+" : items.length}</b>}
+    </button>
+    {open && <section className="notification-panel" aria-label="Central de notificações">
+      <header><span><small>CENTRAL DO PROPRIETÁRIO</small><strong>Notificações</strong></span><em>{items.length}</em></header>
+      <div className="notification-list">
+        {items.map((item) => <button key={item.id} className={item.urgent ? "urgent" : ""} onClick={() => { onNavigate(item.target); setOpen(false); }}>
+          <i>{item.kind === "stock" ? <PackageOpen aria-hidden="true" /> : <CalendarDays aria-hidden="true" />}</i>
+          <span><strong>{item.title}</strong><small>{item.detail}</small></span><b>→</b>
+        </button>)}
+        {!items.length && <div className="notification-empty"><Bell aria-hidden="true" /><strong>{loading ? "Atualizando..." : "Tudo em dia"}</strong><small>Nenhuma atenção necessária agora.</small></div>}
+      </div>
+      <footer>Atualização automática durante o uso do painel.</footer>
+    </section>}
+  </div>;
+}
+
+function playBellSound() {
+  try {
+    const AudioContextConstructor = window.AudioContext
+      || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const context = new AudioContextConstructor();
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.65);
+    gain.connect(context.destination);
+    [880, 1174].forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.value = frequency;
+      oscillator.connect(gain);
+      oscillator.start(context.currentTime + index * 0.11);
+      oscillator.stop(context.currentTime + 0.55 + index * 0.11);
+    });
+    window.setTimeout(() => context.close(), 900);
+  } catch {
+    // Browsers can disable audio until the user interacts with the page.
+  }
+}
+
 function BookingFlow({ config, onBack }: { config: BusinessConfig; onBack: () => void }) {
   const services = config.services.filter((item) => item.active);
-  const barbers = config.barbers.filter((item) => item.active);
+  const barbers = config.barbers.filter(isServiceProfessional);
   const [step, setStep] = useState(1);
   const [serviceName, setServiceName] = useState(services[0]?.name || "");
   const [barber, setBarber] = useState(barbers[0]?.name || "");
@@ -651,6 +731,10 @@ function formatBookingDate(value: string) {
   return new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
+function isServiceProfessional(item: { active: boolean; role?: string }) {
+  return item.active && String(item.role || "Barbeiro").trim().toLowerCase() !== "caixa";
+}
+
 function ConfigContent({ config, section, onSave, notice, signedIn, tenantId, tenantName, tenantPlan }: {
   config: BusinessConfig;
   section: string;
@@ -665,7 +749,7 @@ function ConfigContent({ config, section, onSave, notice, signedIn, tenantId, te
   const [photoNotice, setPhotoNotice] = useState("");
   const [accessNotice, setAccessNotice] = useState("");
   const professionalLimit = tenantPlan === "starter" ? 1 : tenantPlan === "pro" ? 5 : Number.POSITIVE_INFINITY;
-  const reachedProfessionalLimit = draft.barbers.length >= professionalLimit;
+  const reachedProfessionalLimit = draft.barbers.filter(isServiceProfessional).length >= professionalLimit;
   useEffect(() => setDraft(config), [config]);
 
   const updateService = (index: number, field: string, value: string | number | boolean) => {
@@ -674,6 +758,21 @@ function ConfigContent({ config, section, onSave, notice, signedIn, tenantId, te
   };
   const updateBarber = (index: number, field: string, value: unknown) => {
     const barbers = draft.barbers.map((item, i) => i === index ? { ...item, [field]: value } : item);
+    setDraft({ ...draft, barbers });
+  };
+  const updateStaffRole = (index: number, role: string) => {
+    const barbers = draft.barbers.map((item, i) => i === index ? {
+      ...item,
+      role,
+      commission: role === "Caixa" ? 0 : item.commission,
+      services: role === "Caixa" ? [] : item.services,
+      permissions: {
+        ...item.permissions,
+        inventory: role === "Caixa" ? true : Boolean(item.permissions.inventory),
+        finance: false,
+        settings: false,
+      },
+    } : item);
     setDraft({ ...draft, barbers });
   };
   const updateBarberEmail = (index: number, email: string) => {
@@ -693,7 +792,7 @@ function ConfigContent({ config, section, onSave, notice, signedIn, tenantId, te
     });
     setDraft({ ...draft, barbers });
   };
-  const updatePermission = (index: number, permission: "agenda" | "clients" | "finance" | "settings", value: boolean) => {
+  const updatePermission = (index: number, permission: "agenda" | "clients" | "inventory", value: boolean) => {
     const barbers = draft.barbers.map((item, i) => i === index ? { ...item, permissions: { ...item.permissions, [permission]: value } } : item);
     setDraft({ ...draft, barbers });
   };
@@ -816,7 +915,7 @@ function ConfigContent({ config, section, onSave, notice, signedIn, tenantId, te
           </header>
           <div className="professional-fields">
             <label>Nome completo<input value={barber.name} onChange={(e) => updateBarber(index, "name", e.target.value)} /></label>
-            <label>Função<select value={barber.role || "Barbeiro"} onChange={(e) => updateBarber(index, "role", e.target.value)}><option>Barbeiro</option><option>Recepcionista</option><option>Gerente</option></select></label>
+            <label>Função<select value={barber.role || "Barbeiro"} onChange={(e) => updateStaffRole(index, e.target.value)}><option>Barbeiro</option><option>Caixa</option><option>Recepcionista</option><option>Gerente</option></select></label>
             <label>E-mail de acesso<input type="email" placeholder="profissional@email.com" value={barber.email || ""} onChange={(e) => updateBarberEmail(index, e.target.value)} /></label>
             <label>WhatsApp<input placeholder="(00) 0 0000-0000" value={barber.phone || ""} onChange={(e) => updateBarber(index, "phone", e.target.value)} /></label>
             <label>Comissão<label className="money-input"><input type="number" min="0" max="100" value={barber.commission} onChange={(e) => updateBarber(index, "commission", Number(e.target.value))} /><span>%</span></label></label>
@@ -828,12 +927,11 @@ function ConfigContent({ config, section, onSave, notice, signedIn, tenantId, te
           <div className="professional-section"><span><ShieldCheck aria-hidden="true" /> PERMISSÕES NO PAINEL</span><div className="permission-grid">{[
             ["agenda", "Agenda"],
             ["clients", "Clientes"],
-            ["finance", "Financeiro"],
-            ["settings", "Configurações"],
-          ].map(([permission, label]) => <label key={permission}><input type="checkbox" checked={Boolean(barber.permissions?.[permission as keyof typeof barber.permissions])} onChange={(e) => updatePermission(index, permission as "agenda" | "clients" | "finance" | "settings", e.target.checked)} /><span>{label}</span></label>)}</div><div className="staff-access-control"><span><strong>{barber.accessEnabled ? "Acesso individual ativo" : "Acesso ainda não criado"}</strong><small>{barber.accessEnabled ? barber.accessMustChange ? "Aguardando troca da senha provisória" : "Senha pessoal configurada" : "Salve o e-mail e libere o acesso quando estiver pronto."}</small></span><button type="button" className="outline-button" disabled={!barber.email} onClick={() => createStaffAccess(index)}>{barber.accessEnabled ? "Redefinir senha" : "Liberar acesso"}</button>{barber.accessEnabled && <button type="button" className="danger-button" onClick={() => revokeStaffAccess(index)}>Bloquear acesso</button>}</div><small className="permission-note">{barber.email ? "Uma senha provisória única será exibida ao liberar o acesso. A troca será obrigatória no primeiro login." : "Informe um e-mail para preparar o acesso individual."}</small></div>
+            ["inventory", "Estoque e vendas"],
+          ].map(([permission, label]) => <label key={permission}><input type="checkbox" checked={Boolean(barber.permissions?.[permission as keyof typeof barber.permissions])} onChange={(e) => updatePermission(index, permission as "agenda" | "clients" | "inventory", e.target.checked)} /><span>{label}</span></label>)}<label className="permission-locked"><input type="checkbox" checked={false} disabled /><span>Financeiro · somente proprietário</span></label></div><div className="staff-access-control"><span><strong>{barber.accessEnabled ? "Acesso individual ativo" : "Acesso ainda não criado"}</strong><small>{barber.accessEnabled ? barber.accessMustChange ? "Aguardando troca da senha provisória" : "Senha pessoal configurada" : "Salve o e-mail e libere o acesso quando estiver pronto."}</small></span><button type="button" className="outline-button" disabled={!barber.email} onClick={() => createStaffAccess(index)}>{barber.accessEnabled ? "Redefinir senha" : "Liberar acesso"}</button>{barber.accessEnabled && <button type="button" className="danger-button" onClick={() => revokeStaffAccess(index)}>Bloquear acesso</button>}</div><small className="permission-note">{barber.email ? "Uma senha provisória única será exibida ao liberar o acesso. A troca será obrigatória no primeiro login." : "Informe um e-mail para preparar o acesso individual."}</small></div>
         </article>)}
       </div>
-      <button className="add-row team-add" disabled={reachedProfessionalLimit} onClick={() => setDraft({ ...draft, barbers: [...draft.barbers, { name: "Novo profissional", email: "", phone: "", photoKey: null, accessEnabled: false, accessMustChange: false, role: "Barbeiro", commission: 30, services: draft.services.filter((item) => item.active).map((item) => item.name), workDays: ["2", "3", "4", "5", "6"], workStart: "09:00", workEnd: "18:00", breakStart: "12:00", breakEnd: "13:00", timeOff: [], permissions: { agenda: true, clients: false, finance: false, settings: false }, active: true }] })}>{reachedProfessionalLimit ? "Limite do plano atingido" : "+ Adicionar profissional"}</button>
+      <div className="team-add-actions"><button className="add-row team-add" disabled={reachedProfessionalLimit} onClick={() => setDraft({ ...draft, barbers: [...draft.barbers, { name: "Novo profissional", email: "", phone: "", photoKey: null, accessEnabled: false, accessMustChange: false, role: "Barbeiro", commission: 30, services: draft.services.filter((item) => item.active).map((item) => item.name), workDays: ["2", "3", "4", "5", "6"], workStart: "09:00", workEnd: "18:00", breakStart: "12:00", breakEnd: "13:00", timeOff: [], permissions: { agenda: true, clients: false, inventory: false, finance: false, settings: false }, active: true }] })}>{reachedProfessionalLimit ? "Limite do plano atingido" : "+ Adicionar profissional"}</button><button className="add-row team-add cashier-add" onClick={() => setDraft({ ...draft, barbers: [...draft.barbers, { name: "Novo caixa", email: "", phone: "", photoKey: null, accessEnabled: false, accessMustChange: false, role: "Caixa", commission: 0, services: [], workDays: ["1", "2", "3", "4", "5", "6"], workStart: "09:00", workEnd: "18:00", breakStart: "", breakEnd: "", timeOff: [], permissions: { agenda: true, clients: true, inventory: true, finance: false, settings: false }, active: true }] })}>+ Adicionar caixa</button></div>
     </section>}
 
     {section === "Configurações" && <><LogoManager tenantId={tenantId} tenantName={tenantName} signedIn={signedIn} /><section className="panel config-panel hours-panel">
@@ -1112,7 +1210,7 @@ function ClientsContent({ tenantId, config, quickAction, onActionHandled }: {
     {selected && <ClientHistory client={selected} history={history} onClose={() => setSelected(null)} onStopMonthly={() => stopMonthly(selected)} />}
     {creating && <div className="appointment-overlay" role="dialog" aria-modal="true" aria-label="Novo cliente"><form className="tenant-form panel quick-client-form" onSubmit={createClient}>
       <header><div><span className="section-kicker">CLIENTES</span><h2>Novo cliente</h2><p>Cadastre o contato para encontrá-lo rapidamente.</p></div><button type="button" className="editor-close" onClick={() => setCreating(false)}>×</button></header>
-      <div className="editor-fields"><label>Nome completo<input name="name" required minLength={2} autoFocus placeholder="Nome do cliente" /></label><label>WhatsApp<input name="phone" required minLength={8} placeholder="(00) 0 0000-0000" /></label><label className="monthly-toggle"><input type="checkbox" checked={creatingMonthly} onChange={(event) => setCreatingMonthly(event.target.checked)} /><span><strong>Cliente mensalista</strong><small>Reserva o mesmo horário toda semana por 6 meses.</small></span></label>{creatingMonthly && <><label>Dia fixo<select name="recurringWeekday" required defaultValue="2"><option value="0">Domingo</option><option value="1">Segunda-feira</option><option value="2">Terça-feira</option><option value="3">Quarta-feira</option><option value="4">Quinta-feira</option><option value="5">Sexta-feira</option><option value="6">Sábado</option></select></label><label>Horário fixo<input name="recurringTime" type="time" required /></label><label>Profissional<select name="recurringBarber" required>{config.barbers.filter((item) => item.active).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Serviço<select name="recurringService" required>{config.services.filter((item) => item.active).map((item) => <option key={item.name}>{item.name}</option>)}</select></label></>}</div>
+      <div className="editor-fields"><label>Nome completo<input name="name" required minLength={2} autoFocus placeholder="Nome do cliente" /></label><label>WhatsApp<input name="phone" required minLength={8} placeholder="(00) 0 0000-0000" /></label><label className="monthly-toggle"><input type="checkbox" checked={creatingMonthly} onChange={(event) => setCreatingMonthly(event.target.checked)} /><span><strong>Cliente mensalista</strong><small>Reserva o mesmo horário toda semana por 6 meses.</small></span></label>{creatingMonthly && <><label>Dia fixo<select name="recurringWeekday" required defaultValue="2"><option value="0">Domingo</option><option value="1">Segunda-feira</option><option value="2">Terça-feira</option><option value="3">Quarta-feira</option><option value="4">Quinta-feira</option><option value="5">Sexta-feira</option><option value="6">Sábado</option></select></label><label>Horário fixo<input name="recurringTime" type="time" required /></label><label>Profissional<select name="recurringBarber" required>{config.barbers.filter(isServiceProfessional).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Serviço<select name="recurringService" required>{config.services.filter((item) => item.active).map((item) => <option key={item.name}>{item.name}</option>)}</select></label></>}</div>
       <div className="editor-actions"><button type="button" className="outline-button" onClick={() => setCreating(false)}>Cancelar</button><button className="gold-button compact" type="submit">Salvar cliente</button></div>
     </form></div>}
   </div>;
@@ -1310,10 +1408,10 @@ function AgendaContent({ tenantId, config, quickAction, onActionHandled }: {
     </section>
     {creating && <div className="appointment-overlay" role="dialog" aria-modal="true" aria-label="Novo horário"><form className="tenant-form panel" onSubmit={createAgendaItem}>
       <header><div><span className="section-kicker">AGENDA</span><h2>Novo horário</h2><p>Agende um cliente ou bloqueie um período.</p></div><button type="button" className="editor-close" onClick={() => setCreating(false)}>×</button></header>
-      <div className="editor-fields"><label>Tipo<select name="kind" value={creationKind} onChange={(event) => setCreationKind(event.target.value as "appointment" | "blocked")}><option value="appointment">Agendamento</option><option value="blocked">Bloqueio de agenda</option></select></label><label>Data<input name="date" type="date" required defaultValue={toLocalISODate(new Date())} /></label><label>Horário<input name="time" type="time" required /></label><label>Profissional<select name="barber" required>{config.barbers.filter((item) => item.active).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Serviço<select name="service" required disabled={creationKind === "blocked"}>{config.services.filter((item) => item.active).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Cliente<input name="customerName" required={creationKind === "appointment"} disabled={creationKind === "blocked"} placeholder="Nome completo" /></label><label>WhatsApp<input name="phone" required={creationKind === "appointment"} disabled={creationKind === "blocked"} placeholder="(47) 9 9999-9999" /></label></div>
+      <div className="editor-fields"><label>Tipo<select name="kind" value={creationKind} onChange={(event) => setCreationKind(event.target.value as "appointment" | "blocked")}><option value="appointment">Agendamento</option><option value="blocked">Bloqueio de agenda</option></select></label><label>Data<input name="date" type="date" required defaultValue={toLocalISODate(new Date())} /></label><label>Horário<input name="time" type="time" required /></label><label>Profissional<select name="barber" required>{config.barbers.filter(isServiceProfessional).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Serviço<select name="service" required disabled={creationKind === "blocked"}>{config.services.filter((item) => item.active).map((item) => <option key={item.name}>{item.name}</option>)}</select></label><label>Cliente<input name="customerName" required={creationKind === "appointment"} disabled={creationKind === "blocked"} placeholder="Nome completo" /></label><label>WhatsApp<input name="phone" required={creationKind === "appointment"} disabled={creationKind === "blocked"} placeholder="(47) 9 9999-9999" /></label></div>
       <div className="editor-actions"><button type="button" className="outline-button" onClick={() => setCreating(false)}>Cancelar</button><button className="gold-button compact" type="submit">Salvar horário</button></div>
     </form></div>}
-    {selected && <AppointmentEditor appointment={selected} tenantId={tenantId} barbers={config.barbers.filter((item) => item.active).map((item) => item.name)} onClose={() => setSelected(null)} onUpdated={() => { setSelected(null); loadWeek(); }} />}
+    {selected && <AppointmentEditor appointment={selected} tenantId={tenantId} barbers={config.barbers.filter(isServiceProfessional).map((item) => item.name)} onClose={() => setSelected(null)} onUpdated={() => { setSelected(null); loadWeek(); }} />}
   </div>;
 }
 
@@ -1450,7 +1548,7 @@ function DashboardContent({ mini = false, config = defaultConfig, tenantId = "ch
       {selectedAppointment && <AppointmentEditor
         appointment={selectedAppointment}
         tenantId={tenantId}
-        barbers={config.barbers.filter((item) => item.active).map((item) => item.name)}
+        barbers={config.barbers.filter(isServiceProfessional).map((item) => item.name)}
         onClose={() => setSelectedAppointment(null)}
         onUpdated={() => { setSelectedAppointment(null); loadAgenda(); }}
       />}

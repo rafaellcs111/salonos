@@ -18,7 +18,7 @@ async function ensureTables() {
       work_start TEXT NOT NULL DEFAULT '09:00', work_end TEXT NOT NULL DEFAULT '18:00',
       break_start TEXT NOT NULL DEFAULT '', break_end TEXT NOT NULL DEFAULT '',
       time_off TEXT NOT NULL DEFAULT '[]',
-      permissions TEXT NOT NULL DEFAULT '{"agenda":true,"clients":true,"finance":false,"settings":false}',
+      permissions TEXT NOT NULL DEFAULT '{"agenda":true,"clients":true,"inventory":false,"finance":false,"settings":false}',
       active INTEGER NOT NULL DEFAULT 1
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS business_hours (
@@ -77,6 +77,9 @@ export async function POST(request: Request) {
   const tenant = new URL(request.url).searchParams.get("tenant");
   const access = await getTenantAccess(tenant, "settings");
   if (!access) return Response.json({ error: "Acesso restrito a esta barbearia" }, { status: 403 });
+  if (access.role === "staff") {
+    return Response.json({ error: "Somente o proprietário pode alterar equipe e permissões" }, { status: 403 });
+  }
   await ensureTables();
   const data = await request.json() as {
     services: { name: string; price: number; duration: number; active: boolean }[];
@@ -85,7 +88,7 @@ export async function POST(request: Request) {
       services?: string[]; workDays?: string[];
       workStart?: string; workEnd?: string; breakStart?: string; breakEnd?: string;
       timeOff?: { start?: string; end?: string; label?: string }[];
-      permissions?: { agenda?: boolean; clients?: boolean; finance?: boolean; settings?: boolean };
+      permissions?: { agenda?: boolean; clients?: boolean; inventory?: boolean; finance?: boolean; settings?: boolean };
       active: boolean;
     }[];
     hours: { label: string; days: string; open: string; close: string; active: boolean }[];
@@ -94,7 +97,8 @@ export async function POST(request: Request) {
     return Response.json({ error: "Configuração inválida" }, { status: 400 });
   }
   const professionalLimit = access.plan === "starter" ? 1 : access.plan === "pro" ? 5 : Number.POSITIVE_INFINITY;
-  if (data.barbers.length > professionalLimit) {
+  const serviceProfessionals = data.barbers.filter((item) => String(item.role || "Barbeiro").trim().toLowerCase() !== "caixa");
+  if (serviceProfessionals.length > professionalLimit) {
     return Response.json(
       { error: `O plano ${access.plan === "starter" ? "Starter" : "Pro"} permite até ${professionalLimit} profissionais` },
       { status: 403 },
@@ -152,8 +156,9 @@ export async function POST(request: Request) {
         JSON.stringify({
           agenda: Boolean(x.permissions?.agenda),
           clients: Boolean(x.permissions?.clients),
-          finance: Boolean(x.permissions?.finance),
-          settings: Boolean(x.permissions?.settings),
+          inventory: Boolean(x.permissions?.inventory),
+          finance: false,
+          settings: false,
         }),
         x.active ? 1 : 0,
       )),
@@ -183,11 +188,12 @@ function safePermissions(value: unknown) {
     return {
       agenda: Boolean(parsed.agenda),
       clients: Boolean(parsed.clients),
+      inventory: Boolean(parsed.inventory),
       finance: Boolean(parsed.finance),
       settings: Boolean(parsed.settings),
     };
   } catch {
-    return { agenda: true, clients: true, finance: false, settings: false };
+    return { agenda: true, clients: true, inventory: false, finance: false, settings: false };
   }
 }
 
