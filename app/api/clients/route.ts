@@ -8,6 +8,7 @@ async function ensureTables() {
       tenant_id TEXT NOT NULL,
       customer_name TEXT NOT NULL,
       phone TEXT NOT NULL,
+      cpf TEXT NOT NULL DEFAULT '',
       barber TEXT NOT NULL,
       service TEXT NOT NULL,
       date TEXT NOT NULL,
