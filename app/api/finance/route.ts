@@ -9,11 +9,15 @@ export async function GET(request: Request) {
     return Response.json({ error: "Financeiro disponível nos planos Pro e Premium" }, { status: 403 });
   }
   const period = url.searchParams.get("period") || new Date().toISOString().slice(0, 7);
+  const day = url.searchParams.get("day") || `${period}-01`;
   if (!/^\d{4}-\d{2}$/.test(period)) {
     return Response.json({ error: "Período inválido" }, { status: 400 });
   }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !day.startsWith(`${period}-`)) {
+    return Response.json({ error: "Dia inválido para o mês selecionado" }, { status: 400 });
+  }
 
-  const [serviceSummary, byBarber, serviceTransactions, productSummary, productTransactions] = await Promise.all([
+  const [serviceSummary, byBarber, serviceTransactions, productSummary, productTransactions, dailyServices, dailyProducts] = await Promise.all([
     env.DB.prepare(
       `SELECT COUNT(*) AS completedAppointments,
         ROUND(SUM(COALESCE((SELECT price FROM services s
@@ -56,6 +60,14 @@ export async function GET(request: Request) {
        FROM inventory_sales
        WHERE tenant_id = ? AND substr(sale_date, 1, 7) = ?`,
     ).bind(access.tenantId, period).all(),
+    env.DB.prepare(`SELECT COUNT(*) AS appointments, ROUND(COALESCE(SUM(COALESCE(
+      (SELECT price FROM services s WHERE s.tenant_id = appointments.tenant_id
+       AND s.name = appointments.service ORDER BY s.id DESC LIMIT 1), 0)), 0), 2) AS revenue
+      FROM appointments WHERE tenant_id = ? AND status = 'completed' AND date = ?`)
+      .bind(access.tenantId, day).all(),
+    env.DB.prepare(`SELECT COUNT(*) AS sales, COALESCE(SUM(total_amount), 0) AS revenueCents
+      FROM inventory_sales WHERE tenant_id = ? AND sale_date = ?`)
+      .bind(access.tenantId, day).all(),
   ]);
 
   const barbers = (byBarber.results as Array<Record<string, unknown>>).map((item) => {
@@ -73,6 +85,8 @@ export async function GET(request: Request) {
     .slice(0, 150);
   const transactionCount = completedAppointments + productSales;
   const grossRevenue = serviceRevenue + productRevenue;
+  const dailyServiceRevenue = Number(dailyServices.results[0]?.revenue || 0);
+  const dailyProductRevenue = Number(dailyProducts.results[0]?.revenueCents || 0) / 100;
   const paymentMethods = transactions.reduce<Record<string, number>>((totals, item) => {
     const method = String(item.paymentMethod || "unregistered");
     totals[method] = (totals[method] || 0) + Number(item.amount || 0);
@@ -90,6 +104,11 @@ export async function GET(request: Request) {
       averageTicket: transactionCount ? grossRevenue / transactionCount : 0,
       commissions,
       netAfterCommissions: grossRevenue - commissions,
+      dailyRevenue: dailyServiceRevenue + dailyProductRevenue,
+      dailyServiceRevenue,
+      dailyProductRevenue,
+      dailyAppointments: Number(dailyServices.results[0]?.appointments || 0),
+      dailyProductSales: Number(dailyProducts.results[0]?.sales || 0),
     },
     barbers,
     transactions,

@@ -1355,9 +1355,12 @@ function weekdayLabel(value: number | null) {
 }
 
 function FinanceContent({ tenantId }: { tenantId: string }) {
-  const [period, setPeriod] = useState(toLocalISODate(new Date()).slice(0, 7));
+  const currentDate = toLocalISODate(new Date());
+  const currentPeriod = currentDate.slice(0, 7);
+  const [period, setPeriod] = useState(currentPeriod);
+  const [selectedDay, setSelectedDay] = useState(currentDate);
   const [data, setData] = useState<{
-    summary: { completedAppointments: number; productSales: number; productItems: number; serviceRevenue: number; productRevenue: number; revenue: number; averageTicket: number; commissions: number; netAfterCommissions: number };
+    summary: { completedAppointments: number; productSales: number; productItems: number; serviceRevenue: number; productRevenue: number; revenue: number; averageTicket: number; commissions: number; netAfterCommissions: number; dailyRevenue: number; dailyServiceRevenue: number; dailyProductRevenue: number; dailyAppointments: number; dailyProductSales: number };
     barbers: { barber: string; appointments: number; revenue: number; commissionRate: number; commission: number }[];
     transactions: { id: number; type: "service" | "product"; customerName: string; barber: string; service: string; date: string; time: string; quantity: number; amount: number; paymentMethod: PaymentMethod | "" }[];
     paymentMethods: Record<string, number>;
@@ -1366,7 +1369,7 @@ function FinanceContent({ tenantId }: { tenantId: string }) {
 
   function loadFinance(silent = false) {
     if (!silent) setNotice("Carregando resultados...");
-    return fetch(`/api/finance?tenant=${encodeURIComponent(tenantId)}&period=${period}`)
+    return fetch(`/api/finance?tenant=${encodeURIComponent(tenantId)}&period=${period}&day=${selectedDay}`)
       .then(async (response) => {
         if (response.status === 401) {
           setNotice("Entre com sua conta para visualizar o financeiro.");
@@ -1384,21 +1387,36 @@ function FinanceContent({ tenantId }: { tenantId: string }) {
 
   useEffect(() => {
     loadFinance();
-  }, [period, tenantId]);
+  }, [period, selectedDay, tenantId]);
   useAutoRefresh(() => { loadFinance(true); });
 
-  const summary = data?.summary || { completedAppointments: 0, productSales: 0, productItems: 0, serviceRevenue: 0, productRevenue: 0, revenue: 0, averageTicket: 0, commissions: 0, netAfterCommissions: 0 };
+  const summary = data?.summary || { completedAppointments: 0, productSales: 0, productItems: 0, serviceRevenue: 0, productRevenue: 0, revenue: 0, averageTicket: 0, commissions: 0, netAfterCommissions: 0, dailyRevenue: 0, dailyServiceRevenue: 0, dailyProductRevenue: 0, dailyAppointments: 0, dailyProductSales: 0 };
   const maxRevenue = Math.max(...(data?.barbers || []).map((item) => Number(item.revenue)), 1);
+  const monthLabel = new Date(`${period}-01T12:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+
+  function selectPeriod(nextPeriod: string) {
+    setPeriod(nextPeriod);
+    setSelectedDay(nextPeriod === currentPeriod ? currentDate : `${nextPeriod}-01`);
+  }
+
+  function movePeriod(offset: number) {
+    const next = new Date(`${period}-01T12:00:00`);
+    next.setMonth(next.getMonth() + offset);
+    selectPeriod(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`);
+  }
 
   return <div className="finance-page">
     <div className="settings-intro finance-intro">
       <div><span className="section-kicker">GESTÃO FINANCEIRA</span><h2>Financeiro</h2><p>Serviços concluídos e vendas de produtos no mesmo resultado.</p></div>
-      <div className="finance-controls"><span className="no-payments">SOMENTE REGISTRO · SEM COBRANÇA</span><input aria-label="Selecionar mês" type="month" value={period} onChange={(event) => setPeriod(event.target.value)} /></div>
+      <div className="finance-controls"><span className="no-payments">SOMENTE REGISTRO · SEM COBRANÇA</span><div className="finance-month-nav"><button type="button" aria-label="Mês anterior" onClick={() => movePeriod(-1)}>←</button><strong>{monthLabel}</strong><button type="button" aria-label="Próximo mês" disabled={period >= currentPeriod} onClick={() => movePeriod(1)}>→</button></div><input aria-label="Selecionar mês" type="month" max={currentPeriod} value={period} onChange={(event) => selectPeriod(event.target.value)} /></div>
+    </div>
+    <div className="finance-revenue-lines">
+      <article><span><small>FATURAMENTO DO DIA</small><input aria-label="Selecionar dia" type="date" min={`${period}-01`} max={period === currentPeriod ? currentDate : `${period}-${String(new Date(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0).getDate()).padStart(2, "0")}`} value={selectedDay} onChange={(event) => setSelectedDay(event.target.value)} /></span><strong>{formatMoney(summary.dailyRevenue)}</strong><em>{formatMoney(summary.dailyServiceRevenue)} em serviços · {formatMoney(summary.dailyProductRevenue)} em produtos</em></article>
+      <article><span><small>FATURAMENTO DO MÊS</small><b>{monthLabel}</b></span><strong>{formatMoney(summary.revenue)}</strong><em>{formatMoney(summary.serviceRevenue)} em serviços · {formatMoney(summary.productRevenue)} em produtos</em></article>
     </div>
     {data && <div className="payment-summary">{Object.entries(paymentMethodLabels).map(([method, label]) => <article key={method}><small>{label}</small><strong>{formatMoney(data.paymentMethods?.[method] || 0)}</strong></article>)}</div>}
-    <CashClosing tenantId={tenantId} onClosed={() => loadFinance(true)} />
+    {period === currentPeriod && <CashClosing tenantId={tenantId} onClosed={() => loadFinance(true)} />}
     <div className="finance-metrics">
-      <article><small>FATURAMENTO REALIZADO</small><strong>{formatMoney(summary.revenue)}</strong><span>{formatMoney(summary.serviceRevenue)} serviços · {formatMoney(summary.productRevenue)} produtos</span></article>
       <article><small>TICKET MÉDIO</small><strong>{formatMoney(summary.averageTicket)}</strong><span>{summary.completedAppointments} serviços · {summary.productSales} vendas</span></article>
       <article><small>COMISSÕES ESTIMADAS</small><strong>{formatMoney(summary.commissions)}</strong><span>conforme percentual da equipe</span></article>
       <article><small>SALDO APÓS COMISSÕES</small><strong>{formatMoney(summary.netAfterCommissions)}</strong><span>valor gerencial, não liquidado</span></article>

@@ -393,4 +393,18 @@ test("ships complete client profiles with no-show and retention controls", async
   assert.match(migration, /clients_tenant_cpf_unique/);
 });
 
+test("navigates financial months and separates daily from monthly revenue", async () => {
+  const [page, finance] = await Promise.all([
+    source("app/page.tsx"),
+    source("app/api/finance/route.ts"),
+  ]);
+  assert.match(page, /FATURAMENTO DO DIA/);
+  assert.match(page, /FATURAMENTO DO MÊS/);
+  assert.match(page, /movePeriod\(-1\)/);
+  assert.match(page, /Selecionar dia/);
+  assert.match(finance, /dailyServiceRevenue/);
+  assert.match(finance, /dailyProductRevenue/);
+  assert.match(finance, /day\.startsWith/);
+});
+
 
