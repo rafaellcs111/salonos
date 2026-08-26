@@ -160,6 +160,91 @@
   margin: 0 !important;
 }
 
+/* Desktop dashboard readability */
+@media (min-width: 651px) {
+  .app-shell .sidebar nav button,
+  .app-shell .sidebar-bottom > button {
+    min-height: 44px;
+    font-size: 15px;
+  }
+
+  .app-shell .workspace strong {
+    font-size: 15px;
+  }
+
+  .app-shell .workspace small {
+    font-size: 13px;
+  }
+
+  .app-shell .user-chip strong {
+    font-size: 14px;
+  }
+
+  .app-shell .user-chip small,
+  .app-shell .app-header p {
+    font-size: 13px;
+  }
+
+  .app-shell .app-header h1 {
+    font-size: 28px;
+  }
+
+  .app-shell .section-kicker {
+    font-size: 12px;
+  }
+
+  .app-shell .settings-intro p {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .app-shell .owner-metrics small {
+    font-size: 12px;
+  }
+
+  .app-shell .owner-metrics strong {
+    font-size: 30px;
+  }
+
+  .app-shell .master-section-page .owner-metrics article span {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .app-shell .owner-head {
+    height: 46px;
+    font-size: 12px;
+  }
+
+  .app-shell .owner-row {
+    min-height: 76px;
+    font-size: 14px;
+  }
+
+  .app-shell .tenant-name small,
+  .app-shell .owner-row small,
+  .app-shell .master-empty-state p {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .app-shell .tenant-toggle,
+  .app-shell .owner-edit,
+  .app-shell .owner-delete {
+    font-size: 13px;
+  }
+
+  .app-shell .gold-button,
+  .app-shell .outline-button {
+    font-size: 14px;
+  }
+
+  .app-shell .master-empty-state h3,
+  .app-shell .panel h2 {
+    font-size: 18px;
+  }
+}
+
 .tenant-list-logo,
 .tenant-public-logo {
   width: 38px;
