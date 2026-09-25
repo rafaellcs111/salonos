@@ -67,6 +67,8 @@ function translate(input: string, values: unknown[]) {
   query = query
     .replace(/INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT/gi, "BIGSERIAL PRIMARY KEY")
     .replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, "INSERT INTO")
+    .replace(/date\('now',\s*'-([0-9]+) days'\)/gi, "(CURRENT_DATE - INTERVAL '$1 days')::text")
+    .replace(/date\('now'\)/gi, "CURRENT_DATE::text")
     .replace(/strftime\('%H:%M',\s*([a-z_]+)\s*\/\s*1000,\s*'unixepoch',\s*'-3 hours'\)/gi, "to_char(to_timestamp($1 / 1000) AT TIME ZONE 'America/Sao_Paulo', 'HH24:MI')")
     .replace(/instr\(','\s*\|\|\s*days\s*\|\|\s*',',\s*','\s*\|\|\s*\?\s*\|\|\s*','\)\s*>\s*0/gi, "POSITION(',' || ? || ',' IN ',' || days || ',') > 0")
     .replace(/\bAS\s+([A-Za-z_]*[A-Z][A-Za-z0-9_]*)/g, 'AS "$1"');
