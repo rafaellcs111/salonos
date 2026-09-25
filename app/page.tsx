@@ -27,6 +27,7 @@ import {
   UserRound,
   UsersRound,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 type View = "landing" | "login" | "admin" | "master" | "booking";
 type QuickAction = "appointment" | "client" | "blocked";
@@ -127,6 +128,8 @@ type TenantSummary = {
   plan: string;
   appointments: number;
   lastAppointment: string | null;
+  businessType: string;
+  theme: string;
 };
 
 type AuditEntry = {
@@ -1665,7 +1668,7 @@ function DashboardContent({ mini = false, config = defaultConfig, tenantId = "ch
   }, !mini);
 
   const displayAppointments = mini ? appointments : liveAppointments;
-  const metrics = mini ? [
+  const metrics: [string, string, string, LucideIcon][] = mini ? [
     ["AGENDAMENTOS HOJE", "12", "+ 18% esta semana", CalendarDays],
     ["FATURAMENTO HOJE", "R$ 580", "+ R$ 120 vs. ontem", ChartNoAxesCombined],
     ["CLIENTES NO MÊS", "186", "+ 24 novos", UsersRound],
@@ -2376,12 +2379,13 @@ function TenantOnboardingWizard({ notice, onClose, onFinish }: {
 }
 
 function LegacyMasterContent() {
-  return <div className="dashboard"><div className="metric-grid">{[
+  const legacyMetrics: [string, string, string, LucideIcon][] = [
     ["BARBEARIAS ATIVAS", "24", "+ 3 este mês", Store],
     ["RECEITA RECORRENTE", "R$ 2.184", "+ 12% este mês", ChartNoAxesCombined],
     ["ASSINATURAS", "21", "3 em teste grátis", CreditCard],
     ["AGENDAMENTOS", "8.492", "Últimos 30 dias", CalendarDays],
-  ].map(([l, v, n, MetricIcon]) => <article className="metric" key={String(l)}><span>{l}</span><i><MetricIcon aria-hidden="true" /></i><strong>{v}</strong><small>{n}</small></article>)}</div><div className="dashboard-grid master-grid"><section className="panel tenant-list"><header><div><h2>Estabelecimentos recentes</h2><p>Negócios cadastrados na plataforma</p></div><button>Ver todos →</button></header>{[["Barbearia Vértice", "Baln. Camboriú · SC", "Pro", "Ativa"], ["Maison Aurora", "Florianópolis · SC", "Premium", "Ativa"], ["Bella Luna Studio", "Joinville · SC", "Starter", "Teste"]].map(([n, city, plan, status]) => <div className="tenant" key={n}><span className="workspace-icon">{n[0]}</span><span><strong>{n}</strong><small>{city}</small></span><b>{plan}</b><i className={status === "Teste" ? "waiting status" : "status"}>{status}</i><button>•••</button></div>)}</section><section className="panel plans"><header><div><h2>Distribuição por plano</h2><p>Assinaturas ativas</p></div></header>{[["Pro", 14, "67%"], ["Starter", 6, "29%"], ["Premium", 1, "4%"]].map(([n, q, p]) => <div className="plan-row" key={n}><span><strong>{n}</strong><small>{q} empresas</small></span><b>{p}</b><div><i style={{width: p}} /></div></div>)}</section></div></div>;
+  ];
+  return <div className="dashboard"><div className="metric-grid">{legacyMetrics.map(([l, v, n, MetricIcon]) => <article className="metric" key={String(l)}><span>{l}</span><i><MetricIcon aria-hidden="true" /></i><strong>{v}</strong><small>{n}</small></article>)}</div><div className="dashboard-grid master-grid"><section className="panel tenant-list"><header><div><h2>Estabelecimentos recentes</h2><p>Negócios cadastrados na plataforma</p></div><button>Ver todos →</button></header>{[["Barbearia Vértice", "Baln. Camboriú · SC", "Pro", "Ativa"], ["Maison Aurora", "Florianópolis · SC", "Premium", "Ativa"], ["Bella Luna Studio", "Joinville · SC", "Starter", "Teste"]].map(([n, city, plan, status]) => <div className="tenant" key={n}><span className="workspace-icon">{n[0]}</span><span><strong>{n}</strong><small>{city}</small></span><b>{plan}</b><i className={status === "Teste" ? "waiting status" : "status"}>{status}</i><button>•••</button></div>)}</section><section className="panel plans"><header><div><h2>Distribuição por plano</h2><p>Assinaturas ativas</p></div></header>{[["Pro", 14, "67%"], ["Starter", 6, "29%"], ["Premium", 1, "4%"]].map(([n, q, p]) => <div className="plan-row" key={n}><span><strong>{n}</strong><small>{q} empresas</small></span><b>{p}</b><div><i style={{width: p}} /></div></div>)}</section></div></div>;
 }
 
 function InventoryContent({ tenantId }: { tenantId: string }) {

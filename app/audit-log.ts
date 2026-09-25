@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env } from "./runtime-env";
 
 export async function ensureAuditLogTable() {
   await env.DB.batch([

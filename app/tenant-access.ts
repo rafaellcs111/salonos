@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env } from "./runtime-env";
 import { getBarberOSOwner, getChatGPTUser, type ChatGPTUser } from "./chatgpt-auth";
 
 export type TenantPermission = "agenda" | "clients" | "inventory" | "finance" | "settings";

@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env } from "../../runtime-env";
 import { getTenantAccess } from "../../tenant-access";
 
 async function ensureTables() {
@@ -168,7 +168,7 @@ export async function POST(request: Request) {
   await env.DB.batch(statements);
   const removedPhotos = previousPhotos.results.map((item) => item.photoKey).filter((key) => !retainedPhotos.has(key));
   if (removedPhotos.length) {
-    await (env as unknown as { MEDIA: R2Bucket }).MEDIA.delete(removedPhotos);
+    await env.MEDIA.delete(removedPhotos);
   }
   return Response.json({ ok: true, updatedBy: access.user.email });
 }

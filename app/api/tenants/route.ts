@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env } from "../../runtime-env";
 import { recordAuditLog } from "../../audit-log";
 import { getBarberOSOwner } from "../../chatgpt-auth";
 import { deleteSupabaseUser } from "../../supabase-auth";
@@ -208,7 +208,7 @@ export async function DELETE(request: Request) {
     env.DB.prepare("DELETE FROM cash_closings WHERE tenant_id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM tenants WHERE id = ?").bind(body.id),
   ]);
-  const media = (env as unknown as { MEDIA: R2Bucket }).MEDIA;
+  const media = env.MEDIA;
   if (tenant.logoKey) await media.delete(tenant.logoKey);
   const professionalPhotos = await media.list({ prefix: `barbers/${body.id}/` });
   if (professionalPhotos.objects.length) {

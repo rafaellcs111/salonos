@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env } from "../../runtime-env";
 import { getTenantAccess } from "../../tenant-access";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
@@ -9,7 +9,7 @@ const ALLOWED_TYPES = new Map([
 ]);
 
 function mediaBucket() {
-  return (env as unknown as { MEDIA: R2Bucket }).MEDIA;
+  return env.MEDIA;
 }
 
 export async function GET(request: Request) {

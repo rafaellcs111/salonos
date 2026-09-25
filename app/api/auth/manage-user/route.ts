@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env } from "../../../runtime-env";
 import { getBarberOSOwner } from "../../../chatgpt-auth";
 import { upsertSupabaseUser } from "../../../supabase-auth";
 import { getTenantAccess } from "../../../tenant-access";

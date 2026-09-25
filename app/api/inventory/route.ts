@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env } from "../../runtime-env";
 import { getTenantAccess } from "../../tenant-access";
 
 const PAYMENT_METHODS = new Set(["cash", "pix", "debit", "credit"]);

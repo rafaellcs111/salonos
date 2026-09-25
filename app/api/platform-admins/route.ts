@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env } from "../../runtime-env";
 import { getBarberOSOwner } from "../../chatgpt-auth";
 import { recordAuditLog } from "../../audit-log";
 import {

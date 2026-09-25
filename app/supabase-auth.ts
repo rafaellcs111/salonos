@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env } from "./runtime-env";
 import { headers } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import type { ChatGPTUser } from "./chatgpt-auth";
@@ -11,8 +11,8 @@ function config() {
   const runtime = env as unknown as Record<string, string>;
   return {
     url: runtime.SUPABASE_URL,
-    publishableKey: runtime.SUPABASE_PUBLISHABLE_KEY,
-    secretKey: runtime.SUPABASE_SECRET_KEY,
+    publishableKey: runtime.SUPABASE_PUBLISHABLE_KEY || runtime.SUPABASE_ANON_KEY,
+    secretKey: runtime.SUPABASE_SECRET_KEY || runtime.SUPABASE_SERVICE_ROLE_KEY,
   };
 }
 

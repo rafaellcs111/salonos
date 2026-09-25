@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env } from "./runtime-env";
 
 export const PRIMARY_PLATFORM_OWNER_EMAIL = "rafaelviamaquinas@gmail.com";
 export const PRIMARY_PLATFORM_OWNER_NAME = "Rafael Doneda";

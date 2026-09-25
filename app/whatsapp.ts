@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env } from "./runtime-env";
 
 type AppointmentMessage = {
   tenantId: string;
