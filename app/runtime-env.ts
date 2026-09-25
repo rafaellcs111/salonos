@@ -105,7 +105,11 @@ class Statement implements BoundStatement {
 
 const DB = {
   prepare(source: string) { return new Statement(source); },
-  async batch(statements: BoundStatement[]) { return Promise.all(statements.map((statement) => statement.run())); },
+  async batch(statements: BoundStatement[]) {
+    const results = [];
+    for (const statement of statements) results.push(await statement.run());
+    return results;
+  },
 };
 
 let storageReady: Promise<ReturnType<ReturnType<typeof createClient>["storage"]["from"]>> | null = null;
