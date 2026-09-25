@@ -407,4 +407,12 @@ test("navigates financial months and separates daily from monthly revenue", asyn
   assert.match(finance, /day\.startsWith/);
 });
 
+test("keeps editable configuration fields mounted while their values change", async () => {
+  const page = await source("app/page.tsx");
+  assert.doesNotMatch(page, /key=\{`\$\{service\.name/);
+  assert.doesNotMatch(page, /key=\{`\$\{barber\.name/);
+  assert.doesNotMatch(page, /key=\{`\$\{period\.start/);
+  assert.doesNotMatch(page, /key=\{hours\.label\}/);
+});
+
 

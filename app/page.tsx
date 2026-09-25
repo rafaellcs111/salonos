@@ -974,7 +974,7 @@ function ConfigContent({ config, section, onSave, notice, signedIn, tenantId, te
 
     {section === "Serviços" && <section className="panel config-panel">
       <div className="config-head"><span>SERVIÇO</span><span>PREÇO</span><span>DURAÇÃO</span><span>ATIVO</span></div>
-      {draft.services.map((service, index) => <div className="config-row" key={`${service.name}-${index}`}>
+      {draft.services.map((service, index) => <div className="config-row" key={index}>
         <input aria-label="Nome do serviço" value={service.name} onChange={(e) => updateService(index, "name", e.target.value)} />
         <label className="money-input"><span>R$</span><input aria-label="Preço" type="number" value={service.price} onChange={(e) => updateService(index, "price", Number(e.target.value))} /></label>
         <label className="money-input"><input aria-label="Duração" type="number" value={service.duration} onChange={(e) => updateService(index, "duration", Number(e.target.value))} /><span>min</span></label>
@@ -993,7 +993,7 @@ function ConfigContent({ config, section, onSave, notice, signedIn, tenantId, te
       {photoNotice && <p className="agenda-page-notice">{photoNotice}</p>}
       {accessNotice && <p className="agenda-page-notice">{accessNotice}</p>}
       <div className="team-list">
-        {draft.barbers.map((barber, index) => <article className="panel professional-card" key={`${barber.name}-${index}`}>
+        {draft.barbers.map((barber, index) => <article className="panel professional-card" key={index}>
           <header>
             <span className="professional-avatar">{barber.photoKey ? <img src={barberPhotoUrl(barber.photoKey)} alt={`Foto de ${barber.name}`} /> : barber.name[0] || "P"}</span>
             <span><strong>{barber.name || "Novo profissional"}</strong><small>{barber.role || "Profissional"} · {barber.active ? "Ativo na agenda" : "Inativo"}</small></span>
@@ -1010,7 +1010,7 @@ function ConfigContent({ config, section, onSave, notice, signedIn, tenantId, te
           <div className="professional-section"><span><Scissors aria-hidden="true" /> SERVIÇOS ATENDIDOS</span><div className="choice-chips">{draft.services.map((service) => <button type="button" className={(barber.services || []).includes(service.name) ? "selected" : ""} onClick={() => toggleBarberList(index, "services", service.name)} key={service.name}>{service.name}</button>)}</div></div>
           <div className="professional-section"><span><CalendarDays aria-hidden="true" /> DIAS DE TRABALHO</span><div className="choice-chips days">{[["1","SEG"],["2","TER"],["3","QUA"],["4","QUI"],["5","SEX"],["6","SÁB"],["0","DOM"]].map(([value, label]) => <button type="button" className={(barber.workDays || []).includes(value) ? "selected" : ""} onClick={() => toggleBarberList(index, "workDays", value)} key={value}>{label}</button>)}</div></div>
           <div className="professional-section"><span><Clock3 aria-hidden="true" /> EXPEDIENTE INDIVIDUAL</span><div className="schedule-fields"><label>Entrada<input type="time" value={barber.workStart || "09:00"} onChange={(e) => updateBarber(index, "workStart", e.target.value)} /></label><label>Saída<input type="time" value={barber.workEnd || "18:00"} onChange={(e) => updateBarber(index, "workEnd", e.target.value)} /></label><label>Início da pausa<input type="time" value={barber.breakStart || ""} onChange={(e) => updateBarber(index, "breakStart", e.target.value)} /></label><label>Fim da pausa<input type="time" value={barber.breakEnd || ""} onChange={(e) => updateBarber(index, "breakEnd", e.target.value)} /></label></div></div>
-          <div className="professional-section"><span><CalendarRange aria-hidden="true" /> FOLGAS E FÉRIAS</span><div className="timeoff-list">{(barber.timeOff || []).map((period, periodIndex) => <div className="timeoff-row" key={`${period.start}-${periodIndex}`}><input aria-label="Motivo" placeholder="Férias ou folga" value={period.label} onChange={(e) => updateTimeOff(index, periodIndex, "label", e.target.value)} /><input aria-label="Início" type="date" value={period.start} onChange={(e) => updateTimeOff(index, periodIndex, "start", e.target.value)} /><input aria-label="Fim" type="date" value={period.end} onChange={(e) => updateTimeOff(index, periodIndex, "end", e.target.value)} /><button type="button" onClick={() => updateBarber(index, "timeOff", (barber.timeOff || []).filter((_, i) => i !== periodIndex))}>Remover</button></div>)}</div><button type="button" className="inline-add" onClick={() => updateBarber(index, "timeOff", [...(barber.timeOff || []), { start: "", end: "", label: "Folga" }])}>+ Adicionar período</button></div>
+          <div className="professional-section"><span><CalendarRange aria-hidden="true" /> FOLGAS E FÉRIAS</span><div className="timeoff-list">{(barber.timeOff || []).map((period, periodIndex) => <div className="timeoff-row" key={periodIndex}><input aria-label="Motivo" placeholder="Férias ou folga" value={period.label} onChange={(e) => updateTimeOff(index, periodIndex, "label", e.target.value)} /><input aria-label="Início" type="date" value={period.start} onChange={(e) => updateTimeOff(index, periodIndex, "start", e.target.value)} /><input aria-label="Fim" type="date" value={period.end} onChange={(e) => updateTimeOff(index, periodIndex, "end", e.target.value)} /><button type="button" onClick={() => updateBarber(index, "timeOff", (barber.timeOff || []).filter((_, i) => i !== periodIndex))}>Remover</button></div>)}</div><button type="button" className="inline-add" onClick={() => updateBarber(index, "timeOff", [...(barber.timeOff || []), { start: "", end: "", label: "Folga" }])}>+ Adicionar período</button></div>
           <div className="professional-section"><span><ShieldCheck aria-hidden="true" /> PERMISSÕES NO PAINEL</span><div className="permission-grid">{[
             ["agenda", "Agenda"],
             ["clients", "Clientes"],
@@ -1023,7 +1023,7 @@ function ConfigContent({ config, section, onSave, notice, signedIn, tenantId, te
 
     {section === "Configurações" && <><LogoManager tenantId={tenantId} tenantName={tenantName} signedIn={signedIn} /><section className="panel config-panel hours-panel">
       <div className="config-head hours-head"><span>PERÍODO</span><span>ABERTURA</span><span>FECHAMENTO</span><span>ATIVO</span></div>
-      {draft.hours.map((hours, index) => <div className="config-row" key={hours.label}>
+      {draft.hours.map((hours, index) => <div className="config-row" key={index}>
         <input aria-label="Período" value={hours.label} onChange={(e) => updateHours(index, "label", e.target.value)} />
         <input aria-label="Abertura" type="time" value={hours.open} onChange={(e) => updateHours(index, "open", e.target.value)} />
         <input aria-label="Fechamento" type="time" value={hours.close} onChange={(e) => updateHours(index, "close", e.target.value)} />
