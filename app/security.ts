@@ -30,7 +30,7 @@ export async function consumeRateLimit({
     `INSERT INTO rate_limits (key_hash, namespace, window_started_at, request_count, expires_at)
      VALUES (?, ?, ?, 1, ?)
      ON CONFLICT(key_hash, window_started_at)
-     DO UPDATE SET request_count = request_count + 1
+     DO UPDATE SET request_count = rate_limits.request_count + 1
      RETURNING request_count AS requestCount`,
   ).bind(keyHash, namespace, windowStartedAt, windowStartedAt + windowMs).first<{ requestCount: number }>();
 
