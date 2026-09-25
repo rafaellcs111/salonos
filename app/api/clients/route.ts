@@ -117,7 +117,7 @@ export async function GET(request: Request) {
      LEFT JOIN appointments ON appointments.tenant_id = ? AND appointments.phone = client_phones.phone
        AND (appointments.status != 'cancelled' OR appointments.no_show = 1)
      GROUP BY client_phones.phone
-     ORDER BY isMonthly DESC, lastVisit DESC, name`,
+     ORDER BY "isMonthly" DESC, "lastVisit" DESC, name`,
   ).bind(
     access.tenantId, access.tenantId,
     access.tenantId, access.tenantId, access.tenantId, access.tenantId,
