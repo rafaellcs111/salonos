@@ -27,17 +27,17 @@ export async function GET(request: Request) {
        WHERE tenant_id = ? AND status = 'completed' AND substr(date, 1, 7) = ?`,
     ).bind(access.tenantId, period).all(),
     env.DB.prepare(
-      `SELECT barber, COUNT(*) AS appointments,
-        ROUND(SUM(COALESCE((SELECT price FROM services s
-          WHERE s.tenant_id = appointments.tenant_id AND s.name = appointments.service
-          ORDER BY s.id DESC LIMIT 1), 0)), 2) AS revenue,
-        COALESCE((SELECT commission FROM barbers b
-          WHERE b.tenant_id = appointments.tenant_id AND b.name = appointments.barber
-          ORDER BY b.id DESC LIMIT 1), 0) AS commissionRate
-       FROM appointments
-       WHERE tenant_id = ? AND status = 'completed' AND substr(date, 1, 7) = ?
-       GROUP BY barber ORDER BY revenue DESC`,
-    ).bind(access.tenantId, period).all(),
+      `SELECT b.name AS barber, COUNT(a.id) AS appointments,
+        COALESCE(ROUND(SUM(COALESCE((SELECT price FROM services s
+          WHERE s.tenant_id = a.tenant_id AND s.name = a.service
+          ORDER BY s.id DESC LIMIT 1), 0)), 2), 0) AS revenue,
+        b.commission AS commissionRate
+       FROM barbers b
+       LEFT JOIN appointments a ON a.tenant_id = b.tenant_id AND a.barber = b.name
+         AND a.status = 'completed' AND substr(a.date, 1, 7) = ?
+       WHERE b.tenant_id = ? AND b.active = 1 AND lower(b.role) != 'caixa'
+       GROUP BY b.id, b.name, b.commission ORDER BY revenue DESC, b.name`,
+    ).bind(period, access.tenantId).all(),
     env.DB.prepare(
       `SELECT id, 'service' AS type, customer_name AS customerName, barber, service,
         date, time, 1 AS quantity, payment_method AS paymentMethod,
